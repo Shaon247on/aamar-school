@@ -199,6 +199,8 @@ model Section {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  classRoutines ClassRoutine[] @relation("SectionToClassRoutine")
+
   @@unique([classId, name])
 }
 
@@ -578,6 +580,7 @@ model ClassRoutine {
   id            String        @id @default(uuid())
   aamarId       String
   classId       String
+  sectionId     String
   academicYear  String
   branchId      String
   schoolId      String
@@ -586,6 +589,7 @@ model ClassRoutine {
   updatedAt     DateTime      @updatedAt
 
   class         Class         @relation(fields: [classId], references: [id])
+  section       Section       @relation("SectionToClassRoutine", fields: [sectionId], references: [id])
   slots         RoutineSlot[]
 }
 

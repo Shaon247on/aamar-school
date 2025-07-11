@@ -22,11 +22,11 @@ interface ClassRoutineResult {
 }
 
 // Get a ClassRoutine by id (with slots, subject, teacher, class)
-export async function getClassRoutine(classId: string): Promise<ClassRoutineResult> {
+export async function getClassRoutine(classId: string, sectionId: string): Promise<ClassRoutineResult> {
   try {
     const session = await requireAuth();
     const routine = await prisma.classRoutine.findFirst({
-      where: { classId, aamarId: session.aamarId },
+      where: { classId, sectionId, aamarId: session.aamarId },
       include: {
         class: true,
         slots: {
@@ -92,6 +92,7 @@ export async function deleteClassRoutine(id: string): Promise<ClassRoutineResult
 export async function upsertClassRoutine({
   id,
   classId,
+  sectionId,
   academicYear,
   branchId,
   schoolId,
@@ -100,6 +101,7 @@ export async function upsertClassRoutine({
 }: {
   id?: string;
   classId: string;
+  sectionId: string;
   academicYear: string;
   branchId: string;
   schoolId: string;
@@ -126,19 +128,18 @@ export async function upsertClassRoutine({
         message: 'The specified branch does not exist or does not belong to your school',
       };
     }
-    // Use upsert if possible (requires a unique constraint on classId + academicYear + aamarId)
-    // If not possible, fallback to manual logic
-    // We'll check if a routine exists for this class, academicYear, and aamarId
+    // Check if a routine exists for this class, section, academicYear, and aamarId
     const existing = await prisma.classRoutine.findFirst({
-      where: { classId, academicYear, aamarId: session.aamarId },
+      where: { classId, sectionId, academicYear, aamarId: session.aamarId },
     });
     if (existing) {
-      // Delete old slots and recreate (simplest for grid update)
+      // Delete old slots and recreate
       await prisma.routineSlot.deleteMany({ where: { classRoutineId: existing.id, aamarId: session.aamarId } });
       const updated = await prisma.classRoutine.update({
         where: { id: existing.id, aamarId: session.aamarId },
         data: {
           classId,
+          sectionId,
           academicYear,
           branchId,
           schoolId,
@@ -171,6 +172,7 @@ export async function upsertClassRoutine({
       const created = await prisma.classRoutine.create({
         data: {
           classId,
+          sectionId,
           academicYear,
           branchId,
           schoolId,
@@ -204,7 +206,7 @@ export async function upsertClassRoutine({
     return {
       success: false,
       error: 'Failed to upsert class routine',
-      message: 'An error occurred while saving the class routine',
+      message: 'An error occurred while upserting the class routine',
     };
   }
 }

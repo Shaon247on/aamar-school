@@ -174,6 +174,16 @@ export default function ClassRoutingEditPage() {
   );
   const [classBranchId, setClassBranchId] = useState<string | null>(null);
 
+  // Add state for selected class-section
+  const [selectedClassSection, setSelectedClassSection] = useState<{ classId: string, sectionId: string, academicYear: string } | null>(null);
+  const [classSectionOptions, setClassSectionOptions] = useState<{
+    value: string;
+    label: string;
+    classId: string;
+    sectionId: string;
+    academicYear: string;
+  }[]>([]);
+
   console.log("subjects", subjects);
   const classTypeOptions = [
     { value: "regular", label: "Regular" },
@@ -184,32 +194,40 @@ export default function ClassRoutingEditPage() {
   useEffect(() => {
     async function loadClassesAndSettings() {
       setLoading(true);
-      // Load classes using getClassStats
+      // Load classes with sections
       const classRes = await getClasses();
-      console.log("classRes", classRes);
       let classes: any[] = [];
       if (classRes.success && Array.isArray(classRes.data)) {
         classes = classRes.data;
-        setClassOptions(
-          classes.map((cls) => ({
-            value: cls.id,
-            label: `${cls.name} (${cls.academicYear})`,
-            academicYear: cls.academicYear,
-          })),
-        );
-        const years = Array.from(
-          new Set(classes.map((cls) => cls.academicYear)),
-        );
-        setAcademicYearOptions(years.map((y) => ({ value: y, label: y })));
-        if (classes.length > 0) {
-          setClassValue(classes[0].id);
-          setYearValue(classes[0].academicYear);
+        // Build class-section options
+        const options: any[] = [];
+        for (const cls of classes) {
+          if (Array.isArray(cls.sections)) {
+            for (const section of cls.sections) {
+              options.push({
+                value: `${cls.id}|${section.id}`,
+                label: `${cls.name} (${section.name})`,
+                classId: cls.id,
+                sectionId: section.id,
+                academicYear: cls.academicYear,
+              });
+            }
+          }
         }
+        setClassSectionOptions(options);
+        if (options.length > 0) {
+          setSelectedClassSection({
+            classId: options[0].classId,
+            sectionId: options[0].sectionId,
+            academicYear: options[0].academicYear,
+          });
+        }
+        const years = Array.from(new Set(classes.map((cls) => cls.academicYear)));
+        setAcademicYearOptions(years.map((y) => ({ value: y, label: y })));
       } else {
-        setClassOptions([]);
+        setClassSectionOptions([]);
+        setSelectedClassSection(null);
         setAcademicYearOptions([]);
-        setClassValue("");
-        setYearValue("");
       }
       // Load settings
       const res = await getSettings();
@@ -264,7 +282,7 @@ export default function ClassRoutingEditPage() {
   // When classValue changes, fetch subjects and teachers for that class
   useEffect(() => {
     async function fetchSubjectsAndTeachers() {
-      if (!classValue) {
+      if (!selectedClassSection) {
         setSubjects([]);
         setTeachers([]);
         setClassBranchId(null);
@@ -272,17 +290,17 @@ export default function ClassRoutingEditPage() {
       }
       // Find branchId for this class
       const selectedClass = classOptions.find(
-        (opt) => opt.value === classValue,
+        (opt) => opt.value === selectedClassSection.classId,
       );
       let branchId = null;
       if (selectedClass) {
         const classObj = (await getClasses()).data as any[];
-        const foundClass = classObj.find((c: any) => c.id === classValue);
+        const foundClass = classObj.find((c: any) => c.id === selectedClassSection.classId);
         branchId = foundClass?.branchId || null;
         setClassBranchId(branchId);
       }
       // Fetch subjects for class
-      const subjRes = await getSubjectsForClass(classValue);
+      const subjRes = await getSubjectsForClass(selectedClassSection.classId);
       console.log("subjRes", subjRes);
       if (subjRes.success && Array.isArray(subjRes.data)) {
         setSubjects(
@@ -309,7 +327,7 @@ export default function ClassRoutingEditPage() {
       }
     }
     fetchSubjectsAndTeachers();
-  }, [classValue]);
+  }, [selectedClassSection]);
 
   // Recompute time slots for each day when assignments or settings change
   useEffect(() => {
@@ -384,12 +402,12 @@ export default function ClassRoutingEditPage() {
     subjects: any,
     teachers: any,
   ) {
-    if (!classId) {
+    if (!selectedClassSection) {
       setAssignments({});
       return;
     }
-    const res = await getClassRoutine(classId);
-    console.log("getClassRoutine result for classId", classId, res); // <-- log the result
+    const res = await getClassRoutine(selectedClassSection.classId, selectedClassSection.sectionId);
+    console.log("getClassRoutine result for classId", selectedClassSection.classId, res); // <-- log the result
     if (
       res.success &&
       res.data &&
@@ -417,9 +435,9 @@ export default function ClassRoutingEditPage() {
 
   // Update useEffect to use the new function
   useEffect(() => {
-    fetchAndSetRoutine(classValue, subjects, teachers);
+    fetchAndSetRoutine(selectedClassSection?.classId || "", subjects, teachers);
     // Only run when classValue, subjects, or teachers change
-  }, [classValue, subjects.length, teachers.length]);
+  }, [selectedClassSection, subjects.length, teachers.length]);
 
   const handleAddSubject = (day: string, time: string) => {
     setDialogData({ day, time });
@@ -460,9 +478,7 @@ export default function ClassRoutingEditPage() {
   // Save routine handler
   async function handleSaveRoutine() {
     if (
-      !classValue ||
-      !yearValue ||
-      !classBranchId ||
+      !selectedClassSection ||
       Object.keys(assignments).length === 0
     )
       return;
@@ -472,7 +488,7 @@ export default function ClassRoutingEditPage() {
     let schoolId = "";
     let createdBy = "";
     if (allClassesRes.success && Array.isArray(allClassesRes.data)) {
-      const found = allClassesRes.data.find((c: any) => c.id === classValue);
+      const found = allClassesRes.data.find((c: any) => c.id === selectedClassSection.classId);
       schoolId = found?.branch?.schoolId || found?.schoolId || "";
       createdBy = found?.teacherId || ""; // fallback, ideally use session user id
     }
@@ -499,8 +515,9 @@ export default function ClassRoutingEditPage() {
       };
     });
     const res = await upsertClassRoutine({
-      classId: classValue,
-      academicYear: yearValue,
+      classId: selectedClassSection.classId,
+      sectionId: selectedClassSection.sectionId,
+      academicYear: selectedClassSection.academicYear,
       branchId: classBranchId,
       schoolId,
       createdBy,
@@ -514,7 +531,7 @@ export default function ClassRoutingEditPage() {
         variant: "default",
       });
       // Fetch and update the table with the latest routine
-      await fetchAndSetRoutine(classValue, subjects, teachers);
+      await fetchAndSetRoutine(selectedClassSection.classId, subjects, teachers);
     } else {
       toast({
         title: "Failed to save routine",
@@ -554,12 +571,24 @@ export default function ClassRoutingEditPage() {
           <div className="flex flex-col md:flex-row gap-4 md:items-end">
             <div>
               <label className="text-sm font-medium mb-2 block">Class</label>
-              <Select value={classValue} onValueChange={setClassValue}>
-                <SelectTrigger className="w-40">
-                  <SelectValue placeholder="Select Class" />
+              <Select
+                value={selectedClassSection ? `${selectedClassSection.classId}|${selectedClassSection.sectionId}` : ''}
+                onValueChange={(val) => {
+                  const found = classSectionOptions.find(opt => opt.value === val);
+                  if (found) {
+                    setSelectedClassSection({
+                      classId: found.classId,
+                      sectionId: found.sectionId,
+                      academicYear: found.academicYear,
+                    });
+                  }
+                }}
+              >
+                <SelectTrigger className="w-64">
+                  <SelectValue placeholder="Select Class & Section" />
                 </SelectTrigger>
                 <SelectContent>
-                  {filteredClassOptions.map((opt) => (
+                  {classSectionOptions.map((opt) => (
                     <SelectItem key={opt.value} value={opt.value}>
                       {opt.label}
                     </SelectItem>
@@ -571,8 +600,8 @@ export default function ClassRoutingEditPage() {
               <label className="text-sm font-medium mb-2 block">
                 Academic Year
               </label>
-              <Select value={yearValue} onValueChange={setYearValue}>
-                <SelectTrigger className="w-40">
+              <Select value={yearValue ?? ''} onValueChange={setYearValue}>
+                <SelectTrigger className="w-64">
                   <SelectValue placeholder="Select Year" />
                 </SelectTrigger>
                 <SelectContent>
@@ -882,8 +911,7 @@ export default function ClassRoutingEditPage() {
           onClick={handleSaveRoutine}
           disabled={
             saveLoading ||
-            !classValue ||
-            !classBranchId ||
+            !selectedClassSection ||
             Object.keys(assignments).length === 0
           }
         >
