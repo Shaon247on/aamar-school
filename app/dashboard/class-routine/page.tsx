@@ -8,26 +8,49 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { getClasses } from "@/app/actions/classes";
-import { getClassRoutine } from "@/app/actions/classRoutine";
-import { getAllTeachers } from "@/app/actions/teachers";
-import { Plus, Download, Calendar } from "lucide-react";
-import Link from 'next/link';
 import { Button } from "@/components/ui/button";
 import { getSettings } from "@/app/actions/settings";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { getSubjectsForClass, getClasses } from "@/app/actions/classes";
+import { getAllTeachers } from "@/app/actions/teachers";
+import { ArrowLeft, Calendar, Download, Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  upsertClassRoutine,
+  getClassRoutine,
+} from "@/app/actions/classRoutine";
+import { useToast } from "@/components/ui/use-toast";
+import Link from "next/link";
+import { DashIcon } from "@radix-ui/react-icons";
 
-// Helper functions (reuse from addRoutine)
+// Assignment type for slot assignments
+type Assignment = {
+  subject: string;
+  teacher: string;
+  classType: string;
+  endTime?: string;
+};
+
+// Helper to convert time string to minutes
 function toMinutes(t: string) {
   const [h, m] = t.split(":").map(Number);
   return h * 60 + m;
 }
+// Helper to convert minutes to time string
 function toTime(m: number) {
   const h = Math.floor(m / 60);
   const min = m % 60;
   return `${h.toString().padStart(2, "0")}:${min.toString().padStart(2, "0")}`;
 }
+
+// Returns array of [start, end] time strings for regular slots
 function getTimeSlots(start: string, end: string, duration: number) {
   const slots = [];
   let cur = toMinutes(start);
@@ -39,12 +62,14 @@ function getTimeSlots(start: string, end: string, duration: number) {
   }
   return slots;
 }
+
+// Generate dynamic time slots for a day based on assignments and custom end times
 function getDynamicTimeSlotsForDay(
   day: string,
   start: string,
   end: string,
   duration: number,
-  assignments: Record<string, any>,
+  assignments: Record<string, Assignment>,
 ): string[] {
   const slots: string[] = [];
   let cur = toMinutes(start);
@@ -56,7 +81,9 @@ function getDynamicTimeSlotsForDay(
     const foundKey = Object.keys(assignments).find((k) =>
       k.startsWith(`${day}|${curTimeStr}-`),
     );
-    const assigned: any = foundKey ? assignments[foundKey] : undefined;
+    const assigned: Assignment | undefined = foundKey
+      ? assignments[foundKey]
+      : undefined;
     let slotEnd: string;
     if (assigned && assigned.classType !== "regular" && assigned.endTime) {
       slotEnd = assigned.endTime;
@@ -73,6 +100,7 @@ function getDynamicTimeSlotsForDay(
   }
   return slots;
 }
+
 function parseSchedule(
   raw: any,
 ): { open: boolean; start: string; end: string }[] {
@@ -105,23 +133,7 @@ function parseSchedule(
   ];
 }
 
-// Helper to identify break slots from assignments
-function getBreakSlots(assignments: Record<string, any>, days: string[]): Record<string, string> {
-  // key: slot (e.g., "12:00-12:30"), value: label (e.g., "Break")
-  const breakSlots: Record<string, string> = {};
-  const slotCounts: Record<string, number> = {};
-  Object.entries(assignments).forEach(([key, value]) => {
-    if (value.classType === "break") {
-      const [, slot] = key.split("|");
-      slotCounts[slot] = (slotCounts[slot] || 0) + 1;
-      breakSlots[slot] = value.label || "Break";
-    }
-  });
-  // Only include slots that are breaks for all days (or at least one day)
-  return breakSlots;
-}
-
-export default function ClassRoutinePage() {
+export default function ClassRoutingEditPage() {
   const [classValue, setClassValue] = useState("");
   const [yearValue, setYearValue] = useState("");
   const [classOptions, setClassOptions] = useState<
@@ -133,21 +145,49 @@ export default function ClassRoutinePage() {
   const [days, setDays] = useState<string[]>([]);
   const [timeSlots, setTimeSlots] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [assignments, setAssignments] = useState<Record<string, any>>({});
-  const [dayTimeSlots, setDayTimeSlots] = useState<Record<string, string[]>>({});
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogData, setDialogData] = useState<{
+    day: string;
+    time: string;
+  } | null>(null);
+  const [assignments, setAssignments] = useState<Record<string, Assignment>>(
+    {},
+  );
+  // Instead of a single timeSlots array, build a map: day -> slots
+  const [dayTimeSlots, setDayTimeSlots] = useState<Record<string, string[]>>(
+    {},
+  );
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  // Dialog form state
+  const [formClassType, setFormClassType] = useState("regular");
+  const [formSubject, setFormSubject] = useState("");
+  const [formTeacher, setFormTeacher] = useState("");
+  const [formEndTime, setFormEndTime] = useState("");
+
+  const [subjects, setSubjects] = useState<
+    { value: string; label: string; teacherId?: string; teacherName?: string }[]
+  >([]);
   const [teachers, setTeachers] = useState<{ value: string; label: string }[]>(
     [],
   );
-  const [subjects, setSubjects] = useState<
-    { value: string; label: string }[]
-  >([]);
+  const [classBranchId, setClassBranchId] = useState<string | null>(null);
 
-  // Load classes, academic years, teachers, and settings on mount
+  console.log("subjects", subjects);
+  const classTypeOptions = [
+    { value: "regular", label: "Regular" },
+    { value: "special", label: "Special" },
+    { value: "break", label: "Break" },
+  ];
+
   useEffect(() => {
-    async function loadInitialData() {
+    async function loadClassesAndSettings() {
       setLoading(true);
-      // Load classes
+      // Load classes using getClassStats
       const classRes = await getClasses();
+      console.log("classRes", classRes);
       let classes: any[] = [];
       if (classRes.success && Array.isArray(classRes.data)) {
         classes = classRes.data;
@@ -172,49 +212,40 @@ export default function ClassRoutinePage() {
         setClassValue("");
         setYearValue("");
       }
-      // Load teachers
-      const teacherRes = await getAllTeachers();
-      if (teacherRes.success && Array.isArray(teacherRes.data)) {
-        setTeachers(
-          teacherRes.data.map((t: any) => ({ value: t.id, label: t.name })),
-        );
-      } else {
-        setTeachers([]);
-      }
-      // Load settings for open days and time slots
-      const settingsRes = await getSettings();
-      if (settingsRes.success && settingsRes.data) {
-        // weeklySchedule is now [{ name, start, end, open }]
-        const schedule = Array.isArray(settingsRes.data.weeklySchedule)
-          ? settingsRes.data.weeklySchedule
-          : [];
-        // Only open days
-        const openDays = schedule.filter((d: any) => d.open);
-        setDays(openDays.map((d: { name: string }) => d.name as string));
-        // For each open day, generate its own slots
-        const allSlotsSet = new Set<string>();
-        openDays.forEach((day: { start: string; end: string }) => {
-          if (day.start && day.end && settingsRes.data.subjectDuration) {
-            getTimeSlots(day.start, day.end, settingsRes.data.subjectDuration).forEach((slot: string) => {
-              allSlotsSet.add(slot);
-            });
-          }
-        });
-        // Sort slots by start time
-        const allSlots = Array.from(allSlotsSet) as string[];
-        allSlots.sort((a: string, b: string) => {
-          const [aStart] = a.split("-");
-          const [bStart] = b.split("-");
-          return toMinutes(aStart) - toMinutes(bStart);
-        });
-        setTimeSlots(allSlots);
+      // Load settings
+      const res = await getSettings();
+      if (res.success && res.data) {
+        const schedule = parseSchedule(res.data.weeklySchedule);
+        const openDays = [
+          "Friday",
+          "Saturday",
+          "Sunday",
+          "Monday",
+          "Tuesday",
+          "Wednesday",
+          "Thursday",
+        ].filter((_, i) => schedule[i]?.open);
+        setDays(openDays);
+        // Use the first open day for start/end time
+        const firstOpen = schedule.find((d) => d.open);
+        if (firstOpen && res.data.subjectDuration) {
+          setTimeSlots(
+            getTimeSlots(
+              firstOpen.start,
+              firstOpen.end,
+              res.data.subjectDuration,
+            ),
+          );
+        } else {
+          setTimeSlots([]);
+        }
       } else {
         setDays([]);
         setTimeSlots([]);
       }
       setLoading(false);
     }
-    loadInitialData();
+    loadClassesAndSettings();
   }, []);
 
   // Filter class options by selected academic year
@@ -231,96 +262,273 @@ export default function ClassRoutinePage() {
     }
   }, [yearValue, classOptions.length]);
 
-  // When classValue changes, fetch routine and set up table
+  // When classValue changes, fetch subjects and teachers for that class
   useEffect(() => {
-    async function fetchRoutineAndSetup() {
+    async function fetchSubjectsAndTeachers() {
       if (!classValue) {
-        setAssignments({});
-        setDays([]);
-        setTimeSlots([]);
-        setDayTimeSlots({});
+        setSubjects([]);
+        setTeachers([]);
+        setClassBranchId(null);
         return;
       }
-      setLoading(true);
-      // Fetch routine
-      const res = await getClassRoutine(classValue);
-      console.log('Fetched routine for class', classValue, res);
-      if (res.success && res.data) {
-        const routine = res.data;
-        // Get all subjects for this class (from slots)
-        const allSubjects = Array.from(
-          new Set(
-            (routine.slots || [])
-              .map((slot: any) => ({
-                value: slot.subject?.id || slot.subjectId,
-                label: slot.subject?.name || "",
-              }))
-              .filter((s: any) => s.value && s.label),
-          )
-        );
-        setSubjects(allSubjects);
-        // Get days from slots
-        const allDays = Array.from(new Set((routine.slots || []).map((slot: any) => slot.day)));
-        setDays(allDays);
-        // Get all time slots for each day
-        const assignments: Record<string, any> = {};
-        for (const slot of routine.slots || []) {
-          const key = `${slot.day}|${slot.startTime}-${slot.endTime}`;
-          assignments[key] = {
-            subject: slot.subjectId || "",
-            teacher: slot.teacherId || "",
-            classType: (slot.classType || "REGULAR").toLowerCase(),
-            endTime: slot.endTime,
-          };
-        }
-        setAssignments(assignments);
-
-        // Compute time slots for each day
-        // Use the earliest start and latest end for the day
-        const dayTimeSlots: Record<string, string[]> = {};
-        for (const day of allDays) {
-          const slotsForDay = (routine.slots || []).filter(
-            (slot: any) => slot.day === day,
-          );
-          if (slotsForDay.length > 0) {
-            // Sort by start time
-            slotsForDay.sort(
-              (a: any, b: any) =>
-                toMinutes(a.startTime) - toMinutes(b.startTime),
-            );
-            dayTimeSlots[day] = slotsForDay.map(
-              (slot: any) => `${slot.startTime}-${slot.endTime}`,
-            );
-          } else {
-            dayTimeSlots[day] = [];
-          }
-        }
-        setDayTimeSlots(dayTimeSlots);
-      } else {
-        setAssignments({});
-        setDays([]);
-        setTimeSlots([]);
-        setDayTimeSlots({});
+      // Find branchId for this class
+      const selectedClass = classOptions.find(
+        (opt) => opt.value === classValue,
+      );
+      let branchId = null;
+      if (selectedClass) {
+        const classObj = (await getClasses()).data as any[];
+        const foundClass = classObj.find((c: any) => c.id === classValue);
+        branchId = foundClass?.branchId || null;
+        setClassBranchId(branchId);
       }
-      setLoading(false);
+      // Fetch subjects for class
+      const subjRes = await getSubjectsForClass(classValue);
+      console.log("subjRes", subjRes);
+      if (subjRes.success && Array.isArray(subjRes.data)) {
+        setSubjects(
+          subjRes.data.map((s: any) => ({
+            value: s.id,
+            label: s.name,
+            teacherId: s.teacherId,
+            teacherName: s.teacher?.user?.firstName
+              ? `${s.teacher.user.firstName} ${s.teacher.user.lastName}`
+              : undefined,
+          })),
+        );
+      } else {
+        setSubjects([]);
+      }
+      // Fetch teachers for branch
+      const teacherRes = await getAllTeachers();
+      if (teacherRes.success && Array.isArray(teacherRes.data)) {
+        setTeachers(
+          teacherRes.data.map((t: any) => ({ value: t.id, label: t.name })),
+        );
+      } else {
+        setTeachers([]);
+      }
     }
-    fetchRoutineAndSetup();
+    fetchSubjectsAndTeachers();
   }, [classValue]);
 
-  // Helper to get teacher name by id
-  const getTeacherName = (id: string) =>
-    teachers.find((t) => t.value === id)?.label || id;
+  // Recompute time slots for each day when assignments or settings change
+  useEffect(() => {
+    if (!days.length || !subjects.length) return;
+    // Find schedule for each day
+    const schedule = days.map((day, i) => ({
+      day,
+      idx: i,
+    }));
+    // Assume all days use the same start/end/duration for now
+    // (could be extended for per-day settings)
+    let start = "08:00";
+    let end = "14:00";
+    let duration = 45;
+    if (subjects.length > 0 && timeSlots.length > 0) {
+      // Use first slot as base
+      const [firstStart, firstEnd] = timeSlots[0].split("-");
+      start = firstStart;
+      // Use last slot's end as day end
+      const lastSlot = timeSlots[timeSlots.length - 1];
+      end = lastSlot.split("-")[1];
+      // Use default duration
+      duration =
+        toMinutes(timeSlots[0].split("-")[1]) -
+        toMinutes(timeSlots[0].split("-")[0]);
+    }
+    const newDayTimeSlots: Record<string, string[]> = {};
+    for (const { day } of schedule) {
+      newDayTimeSlots[day] = getDynamicTimeSlotsForDay(
+        day,
+        start,
+        end,
+        duration,
+        assignments,
+      );
+    }
+    setDayTimeSlots(newDayTimeSlots);
+  }, [days, assignments, timeSlots, subjects.length]);
 
-  // Helper to get subject name by id
-  const getSubjectName = (id: string) =>
-    subjects.find((s) => s.value === id)?.label || id;
+  // When dialog opens, reset form state
+  useEffect(() => {
+    if (dialogOpen && dialogData) {
+      setFormClassType("regular");
+      setFormSubject("");
+      setFormTeacher("");
+    }
+  }, [dialogOpen, dialogData]);
 
-  const breakSlots = getBreakSlots(assignments, days);
+  // Auto-select subject and teacher when editing
+  useEffect(() => {
+    if (
+      dialogOpen &&
+      dialogData &&
+      assignments[`${dialogData.day}|${dialogData.time}`]
+    ) {
+      const assigned = assignments[`${dialogData.day}|${dialogData.time}`];
+      setFormSubject(assigned.subject);
+      setFormTeacher(assigned.teacher);
+      setFormClassType(assigned.classType);
+      setFormEndTime((assigned as Assignment).endTime || "");
+    } else if (dialogOpen && dialogData) {
+      setFormSubject("");
+      setFormTeacher("");
+      setFormClassType("regular");
+      setFormEndTime("");
+    }
+  }, [dialogOpen, dialogData]);
+
+  // Move fetchAndSetRoutine to component scope
+  async function fetchAndSetRoutine(
+    classId: string,
+    subjects: any,
+    teachers: any,
+  ) {
+    if (!classId) {
+      setAssignments({});
+      return;
+    }
+    const res = await getClassRoutine(classId);
+    console.log("getClassRoutine result for classId", classId, res); // <-- log the result
+    if (
+      res.success &&
+      res.data &&
+      Array.isArray(subjects) &&
+      Array.isArray(teachers)
+    ) {
+      const routine = res.data;
+      const newAssignments: Record<string, Assignment> = {};
+      for (const slot of routine.slots || []) {
+        const key = `${slot.day}|${slot.startTime}-${slot.endTime}`;
+        newAssignments[key] = {
+          subject: slot.subjectId || "",
+          teacher: slot.teacherId || "",
+          classType: (slot.classType || "REGULAR").toLowerCase(),
+          ...(slot.classType !== "REGULAR" && slot.endTime
+            ? { endTime: slot.endTime }
+            : {}),
+        };
+      }
+      setAssignments(newAssignments);
+    } else {
+      setAssignments({});
+    }
+  }
+
+  // Update useEffect to use the new function
+  useEffect(() => {
+    fetchAndSetRoutine(classValue, subjects, teachers);
+    // Only run when classValue, subjects, or teachers change
+  }, [classValue, subjects.length, teachers.length]);
+
+  const handleAddSubject = (day: string, time: string) => {
+    setDialogData({ day, time });
+    setDialogOpen(true);
+  };
+
+  const handleDialogSave = () => {
+    if (!dialogData) return;
+    const startTime = dialogData.time.split("-")[0];
+    let endTime = dialogData.time.split("-")[1];
+    if (formClassType !== "regular" && formEndTime) {
+      endTime = formEndTime;
+    }
+    const newKey = `${dialogData.day}|${startTime}-${endTime}`;
+    setAssignments((prev) => {
+      const updated = { ...prev };
+      // Remove any assignment for the old slot (if it exists)
+      Object.keys(updated).forEach((k) => {
+        if (k.startsWith(`${dialogData.day}|${startTime}-`)) {
+          delete updated[k];
+        }
+      });
+      updated[newKey] = {
+        subject: formSubject,
+        teacher: formTeacher,
+        classType: formClassType,
+        ...(formClassType !== "regular" && endTime ? { endTime } : {}),
+      };
+      return updated;
+    });
+    setDialogOpen(false);
+    setDialogData(null);
+  };
+
+  // Helper to get current class object
+  const currentClassObj = classOptions.find((c) => c.value === classValue);
+
+  // Save routine handler
+  async function handleSaveRoutine() {
+    if (
+      !classValue ||
+      !yearValue ||
+      !classBranchId ||
+      Object.keys(assignments).length === 0
+    )
+      return;
+    setSaveLoading(true);
+    // Find the full class object for schoolId/createdBy
+    const allClassesRes = await getClasses();
+    let schoolId = "";
+    let createdBy = "";
+    if (allClassesRes.success && Array.isArray(allClassesRes.data)) {
+      const found = allClassesRes.data.find((c: any) => c.id === classValue);
+      schoolId = found?.branch?.schoolId || found?.schoolId || "";
+      createdBy = found?.teacherId || ""; // fallback, ideally use session user id
+    }
+    // Map frontend classType to Prisma enum
+    const classTypeMap: Record<string, string> = {
+      regular: "REGULAR",
+      special: "SPECIAL",
+      break: "BREAK",
+      lab: "LAB",
+      practical: "PRACTICAL",
+      assignment: "ASSIGNMENT",
+    };
+    // Prepare slots
+    const slots = Object.entries(assignments).map(([key, value]) => {
+      const [day, time] = key.split("|");
+      const [startTime, endTime] = time.split("-");
+      return {
+        day,
+        startTime,
+        endTime: value.endTime || endTime,
+        subjectId: value.subject || undefined,
+        teacherId: value.teacher || undefined,
+        classType: classTypeMap[value.classType] || "REGULAR",
+      };
+    });
+    const res = await upsertClassRoutine({
+      classId: classValue,
+      academicYear: yearValue,
+      branchId: classBranchId,
+      schoolId,
+      createdBy,
+      slots,
+    });
+    setSaveLoading(false);
+    if (res.success) {
+      toast({
+        title: "Routine saved successfully!",
+        description: "The class routine has been saved.",
+        variant: "default",
+      });
+      // Fetch and update the table with the latest routine
+      await fetchAndSetRoutine(classValue, subjects, teachers);
+    } else {
+      toast({
+        title: "Failed to save routine",
+        description:
+          res.message || "An error occurred while saving the routine.",
+        variant: "destructive",
+      });
+    }
+  }
 
   return (
     <div className="flex-1 space-y-4 p-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Class Routine</h1>
           <p className="text-muted-foreground">
@@ -401,7 +609,6 @@ export default function ClassRoutinePage() {
         </CardContent>
       </Card>
 
-      {/* Schedule Table */}
       <Card>
         <CardHeader>
           <CardTitle>Class Routing Table</CardTitle>
@@ -449,36 +656,42 @@ export default function ClassRoutinePage() {
                               className="border relative border-gray-200 p-3 text-center w-32 min-w-[8rem] max-w-[8rem] h-20 min-h-[5rem] align-middle"
                             >
                               {assigned ? (
-                                <div className="pt-5">
-                                  <div className="font-medium text-sm">
-                                    {subjects.find(
-                                      (s) => s.value === assigned.subject,
-                                    )?.label || assigned.subject}
+                                <>
+                                  {/* Edit button top left */}
+                                  <div className="pt-5">
+                                    {/* Padding top for icons */}
+                                    <div className="font-medium text-sm">
+                                      {subjects.find(
+                                        (s) => s.value === assigned.subject,
+                                      )?.label || assigned.subject}
+                                    </div>
+                                    <div className="text-xs text-gray-600">
+                                      {teachers.find(
+                                        (t) => t.value === assigned.teacher,
+                                      )?.label || assigned.teacher}
+                                    </div>
+                                    <div
+                                      className={[
+                                        "text-[0.60rem] capitalize border rounded-full px-2 inline-block",
+                                        assigned.classType === "regular"
+                                          ? "bg-[#d0eff5]"
+                                          : "",
+                                        assigned.classType === "special"
+                                          ? "bg-[#f0cec5]"
+                                          : "",
+                                        assigned.classType === "break"
+                                          ? "bg-[#f8fac5]"
+                                          : "",
+                                      ].join(" ")}
+                                    >
+                                      {assigned.classType}
+                                    </div>
                                   </div>
-                                  <div className="text-xs text-gray-600">
-                                    {teachers.find(
-                                      (t) => t.value === assigned.teacher,
-                                    )?.label || assigned.teacher}
-                                  </div>
-                                  <div
-                                    className={[
-                                      "text-[0.60rem] capitalize border rounded-full px-2 inline-block",
-                                      assigned.classType === "regular"
-                                        ? "bg-[#d0eff5]"
-                                        : "",
-                                      assigned.classType === "special"
-                                        ? "bg-[#f0cec5]"
-                                        : "",
-                                      assigned.classType === "break"
-                                        ? "bg-[#f8fac5]"
-                                        : "",
-                                    ].join(" ")}
-                                  >
-                                    {assigned.classType}
-                                  </div>
-                                </div>
+                                </>
                               ) : (
-                                <span className="text-gray-300">—</span>
+                                <div className="flex items-center justify-center">
+                                  <h4 className="text-2xl">-</h4>
+                                </div>
                               )}
                             </td>
                           );
@@ -487,10 +700,146 @@ export default function ClassRoutinePage() {
                     ))}
                 </tbody>
               </table>
+              {/* Single Dialog instance for Add/Edit */}
+              <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>
+                      {dialogData &&
+                      assignments[`${dialogData.day}|${dialogData.time}`]
+                        ? "Edit Subject"
+                        : "Add Subject"}
+                    </DialogTitle>
+                    <DialogDescription>
+                      Assign a subject and teacher to this slot.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-3">
+                    <div
+                      className={`grid items-center ${formClassType !== "regular" ? "grid-cols-2 gap-4" : "grid-cols-1 gap-0"} `}
+                    >
+                      <div>
+                        <label className="text-xs font-medium block mb-1">
+                          Time
+                        </label>
+                        <input
+                          className="w-full px-2 py-1 border rounded bg-gray-100"
+                          value={dialogData?.time || ""}
+                          readOnly
+                        />
+                      </div>
+                      <div
+                        className={`${formClassType !== "regular col-span-1" ? "block" : "hidden"}`}
+                      >
+                        {formClassType !== "regular" && (
+                          <>
+                            <label className="text-xs font-medium block mb-1">
+                              End Time
+                            </label>
+                            <input
+                              type="time"
+                              className="w-full px-2 py-1 border rounded"
+                              value={formEndTime}
+                              onChange={(e) => setFormEndTime(e.target.value)}
+                            />
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium block mb-1">
+                        Day
+                      </label>
+                      <input
+                        className="w-full px-2 py-1 border rounded bg-gray-100"
+                        value={dialogData?.day || ""}
+                        readOnly
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium block mb-1">
+                        Class Type
+                      </label>
+                      <Select
+                        value={formClassType}
+                        onValueChange={setFormClassType}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {classTypeOptions.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div
+                      className={`${formClassType === "break" ? "hidden" : "block"}`}
+                    >
+                      <label className="text-xs font-medium block mb-1">
+                        Subject
+                      </label>
+                      <Select
+                        value={formSubject}
+                        onValueChange={setFormSubject}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select Subject" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {subjects.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div
+                      className={`${formClassType === "break" ? "hidden" : "block"}`}
+                    >
+                      <label className="text-xs font-medium block mb-1">
+                        Teacher
+                      </label>
+                      <Select
+                        value={formTeacher}
+                        onValueChange={setFormTeacher}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select Teacher" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {teachers.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button
+                      variant="outline"
+                      onClick={() => setDialogOpen(false)}
+                      type="button"
+                    >
+                      Cancel
+                    </Button>
+                    <Button onClick={handleDialogSave} type="button">
+                      Save
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </div>
           )}
         </CardContent>
       </Card>
     </div>
   );
-} 
+}
