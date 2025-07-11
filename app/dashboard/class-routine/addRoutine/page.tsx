@@ -159,6 +159,7 @@ export default function ClassRoutingEditPage() {
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const { toast } = useToast();
+  const [classes, setClasses] = useState<any[]>([]);
 
   // Dialog form state
   const [formClassType, setFormClassType] = useState("regular");
@@ -196,12 +197,13 @@ export default function ClassRoutingEditPage() {
       setLoading(true);
       // Load classes with sections
       const classRes = await getClasses();
-      let classes: any[] = [];
+      let loadedClasses: any[] = [];
       if (classRes.success && Array.isArray(classRes.data)) {
-        classes = classRes.data;
+        loadedClasses = classRes.data;
+        setClasses(loadedClasses);
         // Build class-section options
         const options: any[] = [];
-        for (const cls of classes) {
+        for (const cls of loadedClasses) {
           if (Array.isArray(cls.sections)) {
             for (const section of cls.sections) {
               options.push({
@@ -222,9 +224,10 @@ export default function ClassRoutingEditPage() {
             academicYear: options[0].academicYear,
           });
         }
-        const years = Array.from(new Set(classes.map((cls) => cls.academicYear)));
+        const years = Array.from(new Set(loadedClasses.map((cls) => cls.academicYear)));
         setAcademicYearOptions(years.map((y) => ({ value: y, label: y })));
       } else {
+        setClasses([]);
         setClassSectionOptions([]);
         setSelectedClassSection(null);
         setAcademicYearOptions([]);
@@ -264,6 +267,16 @@ export default function ClassRoutingEditPage() {
     }
     loadClassesAndSettings();
   }, []);
+
+  // Set classBranchId when selectedClassSection changes
+  useEffect(() => {
+    if (!selectedClassSection) {
+      setClassBranchId(null);
+      return;
+    }
+    const foundClass = classes.find((c: any) => c.id === selectedClassSection.classId);
+    setClassBranchId(foundClass?.branchId || null);
+  }, [selectedClassSection, classes]);
 
   // Filter class options by selected academic year
   const filteredClassOptions = classOptions.filter(
@@ -479,6 +492,7 @@ export default function ClassRoutingEditPage() {
   async function handleSaveRoutine() {
     if (
       !selectedClassSection ||
+      !classBranchId ||
       Object.keys(assignments).length === 0
     )
       return;
@@ -912,6 +926,7 @@ export default function ClassRoutingEditPage() {
           disabled={
             saveLoading ||
             !selectedClassSection ||
+            !classBranchId ||
             Object.keys(assignments).length === 0
           }
         >
