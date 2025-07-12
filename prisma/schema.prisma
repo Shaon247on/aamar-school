@@ -336,21 +336,23 @@ model Attendance {
 }
 
 model Exam {
-  id          String        @id @default(cuid())
-  aamarId     String
-  name        String
-  examType    ExamType
-  description String?
-  startDate   DateTime
-  endDate     DateTime
-  classId     String
-  class       Class         @relation(fields: [classId], references: [id])
-  schoolId    String
-  school      School        @relation(fields: [schoolId], references: [id])
-  subjects    ExamSubject[]
-  results     ExamResult[]
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id             String        @id @default(cuid())
+  aamarId        String
+  name           String
+  examType       ExamType
+  description    String?
+  startDate      DateTime
+  endDate        DateTime
+  classId        String
+  class          Class         @relation(fields: [classId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear  @relation(fields: [academicYearId], references: [id])
+  schoolId       String
+  school         School        @relation(fields: [schoolId], references: [id])
+  subjects       ExamSubject[]
+  results        ExamResult[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 }
 
 model ExamSubject {
@@ -630,6 +632,7 @@ model AcademicYear {
 
   class         Class[]
   classRoutines ClassRoutine[]
+  exams         Exam[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }

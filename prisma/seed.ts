@@ -50,6 +50,7 @@ async function main() {
   await prisma.classRoutine.deleteMany();
   await prisma.section.deleteMany();
   await prisma.class.deleteMany();
+  await prisma.settings.deleteMany();
   await prisma.academicYear.deleteMany();
   await prisma.profile.deleteMany();
   await prisma.user.deleteMany();
@@ -124,7 +125,7 @@ async function main() {
     data: {
       aamarId: ORGANIZATION_AAMAR_ID,
       email: "admin@greenwood.edu.bd",
-      password: await bcrypt.hash("admin123", 10),
+      password: await bcrypt.hash("123456", 10),
       firstName: "System",
       lastName: "Administrator",
       role: UserRole.ADMIN,
@@ -532,6 +533,65 @@ async function main() {
     },
   });
 
+  // Create Sample Exams
+  const examData = [
+    {
+      name: "Mid Term Examination",
+      examType: "MIDTERM",
+      description: "Mid-term examination for all classes",
+      startDate: new Date("2024-03-15"),
+      endDate: new Date("2024-03-20"),
+    },
+    {
+      name: "Final Examination",
+      examType: "FINAL",
+      description: "Final examination for all classes",
+      startDate: new Date("2024-06-15"),
+      endDate: new Date("2024-06-25"),
+    },
+    {
+      name: "Unit Test 1",
+      examType: "UNIT_TEST",
+      description: "First unit test of the semester",
+      startDate: new Date("2024-02-01"),
+      endDate: new Date("2024-02-05"),
+    },
+  ];
+
+  const exams = [];
+  for (const examInfo of examData) {
+    // Create exam for each class
+    for (const cls of classes) {
+      const exam = await prisma.exam.create({
+        data: {
+          aamarId: ORGANIZATION_AAMAR_ID,
+          name: `${examInfo.name} - ${cls.name}`,
+          examType: examInfo.examType,
+          description: examInfo.description,
+          startDate: examInfo.startDate,
+          endDate: examInfo.endDate,
+          classId: cls.id,
+          academicYearId: currentAcademicYear.id,
+          schoolId: school.id,
+          subjects: {
+            create: subjects
+              .filter(subject => subject.classId === cls.id)
+              .slice(0, 3) // Limit to 3 subjects per exam
+              .map(subject => ({
+                aamarId: ORGANIZATION_AAMAR_ID,
+                subjectId: subject.id,
+                fullMarks: 100,
+                passMarks: 40,
+                examDate: new Date(examInfo.startDate.getTime() + Math.random() * (examInfo.endDate.getTime() - examInfo.startDate.getTime())),
+                duration: 120, // 2 hours
+              }))
+          }
+        }
+      });
+      exams.push(exam);
+    }
+  }
+
   console.log("✅ Basic setup completed!");
   console.log(`📊 Created:
   - 1 School: ${school.name}
@@ -541,6 +601,7 @@ async function main() {
   - ${subjects.length} Subjects
   - ${teachers.length} Teachers
   - ${students.length} Students with ${parents.length} Parents
+  - ${exams.length} Exams with subjects
   - 1 Admin User: ${adminUser.firstName} ${adminUser.lastName}
   - School Settings configured`);
 }

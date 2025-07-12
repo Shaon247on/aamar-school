@@ -199,6 +199,43 @@ export async function getSubjects() {
   }
 }
 
+// Get subjects by class ID
+export async function getSubjectsForClass(classId: string) {
+  const session = await requireAuth();
+
+  try {
+    const subjects = await prisma.subject.findMany({
+      where: {
+        classId: classId,
+        school: {
+          aamarId: session.aamarId
+        }
+      },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        description: true,
+      },
+      orderBy: {
+        name: 'asc'
+      }
+    });
+
+    return {
+      success: true,
+      data: subjects
+    };
+
+  } catch (error) {
+    console.error('Error fetching subjects for class:', error);
+    return {
+      success: false,
+      error: 'Failed to fetch subjects for class'
+    };
+  }
+}
+
 // Get subject by ID
 export async function getSubjectById(subjectId: string) {
   try {
