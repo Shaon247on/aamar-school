@@ -46,8 +46,11 @@ async function main() {
   await prisma.parent.deleteMany();
   await prisma.teacher.deleteMany();
   await prisma.staff.deleteMany();
+  await prisma.routineSlot.deleteMany();
+  await prisma.classRoutine.deleteMany();
   await prisma.section.deleteMany();
   await prisma.class.deleteMany();
+  await prisma.academicYear.deleteMany();
   await prisma.profile.deleteMany();
   await prisma.user.deleteMany();
   await prisma.branch.deleteMany();
@@ -141,6 +144,50 @@ async function main() {
     },
   });
 
+  // Create Academic Years first
+  const academicYears = [];
+  const academicYearData = [
+    { startingYear: 2024, displayName: "2024-2025" },
+    { startingYear: 2023, displayName: "2023-2024" },
+    { startingYear: 2022, displayName: "2022-2023" },
+  ];
+
+  for (const yearData of academicYearData) {
+    const currentYear = new Date().getFullYear();
+    const isCurrentYear = yearData.startingYear === currentYear;
+    
+    const academicYear = await prisma.academicYear.create({
+      data: {
+        aamarId: ORGANIZATION_AAMAR_ID,
+        startingYear: yearData.startingYear,
+        displayName: yearData.displayName,
+        status: isCurrentYear,
+        terms: {
+          "Term 1": {
+            name: "Term 1",
+            startDate: `${yearData.startingYear}-01-01`,
+            endDate: `${yearData.startingYear}-04-30`,
+          },
+          "Term 2": {
+            name: "Term 2", 
+            startDate: `${yearData.startingYear}-05-01`,
+            endDate: `${yearData.startingYear}-08-31`,
+          },
+          "Term 3": {
+            name: "Term 3",
+            startDate: `${yearData.startingYear}-09-01`,
+            endDate: `${yearData.startingYear}-12-31`,
+          },
+        },
+        userId: adminUser.id,
+      },
+    });
+    academicYears.push(academicYear);
+  }
+
+  // Get the current academic year
+  const currentAcademicYear = academicYears.find(ay => ay.status === true) || academicYears[0];
+
   // Create Classes across different branches
   const classes = [];
   const classNames = [
@@ -164,7 +211,7 @@ async function main() {
         aamarId: ORGANIZATION_AAMAR_ID,
         name: classNames[i],
         branchId: branches[branchIndex].id,
-        academicYear: "2024-25",
+        academicYearId: currentAcademicYear.id,
       },
     });
     classes.push(cls);
@@ -467,15 +514,35 @@ async function main() {
     students.push(studentUser);
   }
 
+  // Create Settings
+  await prisma.settings.create({
+    data: {
+      aamarId: ORGANIZATION_AAMAR_ID,
+      schoolId: school.id,
+      weeklySchedule: [
+        { day: "Friday", open: true, start: "08:00", end: "14:00" },
+        { day: "Saturday", open: true, start: "08:00", end: "14:00" },
+        { day: "Sunday", open: true, start: "08:00", end: "14:00" },
+        { day: "Monday", open: true, start: "08:00", end: "14:00" },
+        { day: "Tuesday", open: true, start: "08:00", end: "14:00" },
+        { day: "Wednesday", open: true, start: "08:00", end: "14:00" },
+        { day: "Thursday", open: true, start: "08:00", end: "14:00" },
+      ],
+      subjectDuration: 45, // 45 minutes per subject
+    },
+  });
+
   console.log("✅ Basic setup completed!");
   console.log(`📊 Created:
   - 1 School: ${school.name}
   - ${branches.length} Branches: ${branches.map((b) => b.name).join(", ")}
+  - ${academicYears.length} Academic Years: ${academicYears.map((ay) => ay.displayName).join(", ")}
   - ${classes.length} Classes with ${sections.length} Sections
   - ${subjects.length} Subjects
   - ${teachers.length} Teachers
   - ${students.length} Students with ${parents.length} Parents
-  - 1 Admin User: ${adminUser.firstName} ${adminUser.lastName}`);
+  - 1 Admin User: ${adminUser.firstName} ${adminUser.lastName}
+  - School Settings configured`);
 }
 
 main()

@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { getSettings } from "@/app/actions/settings";
 import { getSubjectsForClass, getClasses } from "@/app/actions/classes";
 import { getAllTeachers } from "@/app/actions/teachers";
+import { getAcademicYears } from "@/app/actions/academicYear";
 import { ArrowLeft, Calendar, Download, Pencil, Plus, Trash2 } from "lucide-react";
 import {
   Dialog,
@@ -137,7 +138,7 @@ export default function ClassRoutingEditPage() {
   const [classValue, setClassValue] = useState("");
   const [yearValue, setYearValue] = useState("");
   const [classOptions, setClassOptions] = useState<
-    { value: string; label: string; academicYear: string }[]
+    { value: string; label: string; academicYearId: string; academicYearName: string }[]
   >([]);
   const [academicYearOptions, setAcademicYearOptions] = useState<
     { value: string; label: string }[]
@@ -176,13 +177,14 @@ export default function ClassRoutingEditPage() {
   const [classBranchId, setClassBranchId] = useState<string | null>(null);
 
   // Add state for selected class-section
-  const [selectedClassSection, setSelectedClassSection] = useState<{ classId: string, sectionId: string, academicYear: string } | null>(null);
+  const [selectedClassSection, setSelectedClassSection] = useState<{ classId: string, sectionId: string, academicYearId: string; academicYearName: string } | null>(null);
   const [classSectionOptions, setClassSectionOptions] = useState<{
     value: string;
     label: string;
     classId: string;
     sectionId: string;
-    academicYear: string;
+    academicYearId: string;
+    academicYearName: string;
   }[]>([]);
 
   console.log("subjects", subjects);
@@ -226,6 +228,17 @@ export default function ClassRoutingEditPage() {
         setDays([]);
         setTimeSlots([]);
       }
+      // Load academic years first
+      const academicYearsRes = await getAcademicYears();
+      let academicYears: any[] = [];
+      if (academicYearsRes.success && Array.isArray(academicYearsRes.data)) {
+        academicYears = academicYearsRes.data;
+        setAcademicYearOptions(academicYears.map((ay) => ({ 
+          value: ay.id, 
+          label: ay.displayName 
+        })));
+      }
+
       // Load classes with sections
       const classRes = await getClasses();
       let classes: any[] = [];
@@ -236,12 +249,14 @@ export default function ClassRoutingEditPage() {
         for (const cls of classes) {
           if (Array.isArray(cls.sections)) {
             for (const section of cls.sections) {
+              const academicYear = academicYears.find(ay => ay.id === cls.academicYearId);
               options.push({
                 value: `${cls.id}|${section.id}`,
                 label: `${cls.name} (${section.name})`,
                 classId: cls.id,
                 sectionId: section.id,
-                academicYear: cls.academicYear,
+                academicYearId: cls.academicYearId,
+                academicYearName: academicYear?.displayName || 'Unknown Year',
               });
             }
           }
@@ -251,15 +266,13 @@ export default function ClassRoutingEditPage() {
           setSelectedClassSection({
             classId: options[0].classId,
             sectionId: options[0].sectionId,
-            academicYear: options[0].academicYear,
+            academicYearId: options[0].academicYearId,
+            academicYearName: options[0].academicYearName,
           });
         }
-        const years = Array.from(new Set(classes.map((cls) => cls.academicYear)));
-        setAcademicYearOptions(years.map((y) => ({ value: y, label: y })));
       } else {
         setClassSectionOptions([]);
         setSelectedClassSection(null);
-        setAcademicYearOptions([]);
       }
       setLoading(false);
     }
@@ -268,7 +281,7 @@ export default function ClassRoutingEditPage() {
 
   // Filter class options by selected academic year
   const filteredClassOptions = classOptions.filter(
-    (opt) => opt.academicYear === yearValue,
+    (opt) => opt.academicYearId === yearValue,
   );
 
   // When academic year changes, reset classValue to first available class in that year
@@ -400,6 +413,7 @@ export default function ClassRoutingEditPage() {
   // Move fetchAndSetRoutine to component scope
   async function fetchAndSetRoutine(
     classId: string,
+    academicYearId: string,
     subjects: any,
     teachers: any,
   ) {
@@ -407,7 +421,7 @@ export default function ClassRoutingEditPage() {
       setAssignments({});
       return;
     }
-    const res = await getClassRoutine(selectedClassSection.classId, selectedClassSection.sectionId);
+    const res = await getClassRoutine(selectedClassSection.classId, selectedClassSection.sectionId, selectedClassSection.academicYearId);
     console.log("getClassRoutine result for classId", selectedClassSection.classId, res); // <-- log the result
     if (
       res.success &&
@@ -436,7 +450,9 @@ export default function ClassRoutingEditPage() {
 
   // Update useEffect to use the new function
   useEffect(() => {
-    fetchAndSetRoutine(selectedClassSection?.classId || "", subjects, teachers);
+    if (selectedClassSection) {
+      fetchAndSetRoutine(selectedClassSection.classId, selectedClassSection.academicYearId, subjects, teachers);
+    }
     // Only run when classValue, subjects, or teachers change
   }, [selectedClassSection, subjects.length, teachers.length]);
 
@@ -520,7 +536,7 @@ export default function ClassRoutingEditPage() {
     const res = await upsertClassRoutine({
       classId: selectedClassSection.classId,
       sectionId: selectedClassSection.sectionId,
-      academicYear: yearValue,
+      academicYearId: selectedClassSection.academicYearId,
       branchId: classBranchId,
       schoolId,
       createdBy,
@@ -534,7 +550,7 @@ export default function ClassRoutingEditPage() {
         variant: "default",
       });
       // Fetch and update the table with the latest routine
-      await fetchAndSetRoutine(selectedClassSection.classId, subjects, teachers);
+      await fetchAndSetRoutine(selectedClassSection.classId, selectedClassSection.academicYearId, subjects, teachers);
     } else {
       toast({
         title: "Failed to save routine",
@@ -577,7 +593,7 @@ export default function ClassRoutingEditPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="flex flex-col md:flex-row items-center justify-start gap-6">
             <div>
               <label className="text-sm font-medium mb-2 block">Class</label>
               <Select
@@ -588,7 +604,8 @@ export default function ClassRoutingEditPage() {
                     setSelectedClassSection({
                       classId: found.classId,
                       sectionId: found.sectionId,
-                      academicYear: found.academicYear,
+                      academicYearId: found.academicYearId,
+                      academicYearName: found.academicYearName,
                     });
                   }
                 }}

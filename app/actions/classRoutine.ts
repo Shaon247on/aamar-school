@@ -22,13 +22,14 @@ interface ClassRoutineResult {
 }
 
 // Get a ClassRoutine by id (with slots, subject, teacher, class)
-export async function getClassRoutine(classId: string, sectionId: string): Promise<ClassRoutineResult> {
+export async function getClassRoutine(classId: string, sectionId: string, academicYearId: string): Promise<ClassRoutineResult> {
   try {
     const session = await requireAuth();
     const routine = await prisma.classRoutine.findFirst({
-      where: { classId, sectionId, aamarId: session.aamarId },
+      where: { classId, sectionId, academicYearId, aamarId: session.aamarId },
       include: {
         class: true,
+        academicYear: true,
         slots: {
           include: {
             subject: true,
@@ -87,13 +88,12 @@ export async function deleteClassRoutine(id: string): Promise<ClassRoutineResult
   }
 }
 
-
 // Pass slots as an array of slot objects (with day, startTime, endTime, subjectId, teacherId, classType)
 export async function upsertClassRoutine({
   id,
   classId,
   sectionId,
-  academicYear,
+  academicYearId,
   branchId,
   schoolId,
   createdBy,
@@ -102,7 +102,7 @@ export async function upsertClassRoutine({
   id?: string;
   classId: string;
   sectionId: string;
-  academicYear: string;
+  academicYearId: string;
   branchId: string;
   schoolId: string;
   createdBy: string;
@@ -128,9 +128,18 @@ export async function upsertClassRoutine({
         message: 'The specified branch does not exist or does not belong to your school',
       };
     }
-    // Check if a routine exists for this class, section, academicYear, and aamarId
+    // Validate academic year ownership
+    const academicYearObj = await prisma.academicYear.findUnique({ where: { id: academicYearId } });
+    if (!academicYearObj || academicYearObj.aamarId !== session.aamarId) {
+      return {
+        success: false,
+        error: 'Invalid academic year',
+        message: 'The specified academic year does not exist or does not belong to your school',
+      };
+    }
+    // Check if a routine exists for this class, section, academicYearId, and aamarId
     const existing = await prisma.classRoutine.findFirst({
-      where: { classId, sectionId, academicYear, aamarId: session.aamarId },
+      where: { classId, sectionId, academicYearId, aamarId: session.aamarId },
     });
     if (existing) {
       // Delete old slots and recreate
@@ -140,7 +149,7 @@ export async function upsertClassRoutine({
         data: {
           classId,
           sectionId,
-          academicYear,
+          academicYearId,
           branchId,
           schoolId,
           createdBy,
@@ -159,6 +168,7 @@ export async function upsertClassRoutine({
         },
         include: {
           class: true,
+          academicYear: true,
           slots: { include: { subject: true, teacher: true }, where: { aamarId: session.aamarId } },
         },
       });
@@ -173,7 +183,7 @@ export async function upsertClassRoutine({
         data: {
           classId,
           sectionId,
-          academicYear,
+          academicYearId,
           branchId,
           schoolId,
           createdBy,
@@ -192,6 +202,7 @@ export async function upsertClassRoutine({
         },
         include: {
           class: true,
+          academicYear: true,
           slots: { include: { subject: true, teacher: true }, where: { aamarId: session.aamarId } },
         },
       });
@@ -211,4 +222,39 @@ export async function upsertClassRoutine({
   }
 }
 
-// Optionally: Add a getClassRoutinesByClass or byAcademicYear, etc. following the same pattern. 
+// Get class routines by academic year
+export async function getClassRoutinesByAcademicYear(academicYearId: string): Promise<ClassRoutineResult> {
+  try {
+    const session = await requireAuth();
+    const routines = await prisma.classRoutine.findMany({
+      where: { 
+        academicYearId, 
+        aamarId: session.aamarId 
+      },
+      include: {
+        class: true,
+        academicYear: true,
+        section: true,
+        slots: {
+          include: {
+            subject: true,
+            teacher: true,
+          },
+          where: { aamarId: session.aamarId },
+        },
+      },
+    });
+    return {
+      success: true,
+      data: routines,
+      message: 'Class routines retrieved successfully',
+    };
+  } catch (error) {
+    console.error('Error fetching class routines:', error);
+    return {
+      success: false,
+      error: 'Failed to fetch class routines',
+      message: 'An error occurred while fetching the class routines',
+    };
+  }
+} 

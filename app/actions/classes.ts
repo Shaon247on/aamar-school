@@ -9,7 +9,7 @@ import { requireAuth } from '@/lib/session';
 
 interface ClassFormData {
   name: string;
-  academicYear: string;
+  academicYearId: string;
   branchId: string;
   teacherId?: string;
   capacity?: number;
@@ -20,7 +20,13 @@ interface ClassFormData {
 interface ClassData {
   id: string;
   name: string;
-  academicYear: string;
+  academicYearId: string;
+  academicYear?: {
+    id: string;
+    displayName: string;
+    startingYear: number;
+    status: boolean;
+  } | null;
   branchId: string;
   teacherId?: string | null;
   totalStudents: number;
@@ -69,7 +75,7 @@ export async function createClass(formData: ClassFormData): Promise<ClassResult>
     const session = await requireAuth();
     
     // Validate required fields
-    if (!formData.name || !formData.branchId || !formData.academicYear) {
+    if (!formData.name || !formData.branchId || !formData.academicYearId) {
       return {
         success: false,
         error: 'Name, branch, and academic year are required',
@@ -83,7 +89,7 @@ export async function createClass(formData: ClassFormData): Promise<ClassResult>
         aamarId: session.aamarId,
         name: formData.name,
         branchId: formData.branchId,
-        academicYear: formData.academicYear,
+        academicYearId: formData.academicYearId,
       },
     });
 
@@ -91,7 +97,7 @@ export async function createClass(formData: ClassFormData): Promise<ClassResult>
       return {
         success: false,
         error: 'Class already exists',
-        message: `Class ${formData.name} already exists for academic year ${formData.academicYear}`,
+        message: `Class ${formData.name} already exists for this academic year`,
       };
     }
 
@@ -134,11 +140,12 @@ export async function createClass(formData: ClassFormData): Promise<ClassResult>
         aamarId: session.aamarId,
         name: formData.name,
         branchId: formData.branchId,
-        academicYear: formData.academicYear,
+        academicYearId: formData.academicYearId,
         teacherId: formData.teacherId,
       },
       include: {
         branch: true,
+        academicYear: true,
         teacher: {
           include: {
             user: {
@@ -188,6 +195,13 @@ export async function getClasses(): Promise<ClassResult> {
             },
           },
         },
+        academicYear:{
+          select:{
+            displayName: true,
+            id: true,
+            startingYear: true
+          }
+        },
         subjects: true,
         sections: {
           include: {
@@ -219,7 +233,13 @@ export async function getClasses(): Promise<ClassResult> {
     const classesWithCounts: ClassData[] = classes.map(cls => ({
       id: cls.id,
       name: cls.name,
-      academicYear: cls.academicYear,
+      academicYearId: cls.academicYearId || '',
+      academicYear: cls.academicYear ? {
+        id: cls.academicYear.id,
+        displayName: cls.academicYear.displayName,
+        startingYear: cls.academicYear.startingYear,
+        status: cls.academicYear.status,
+      } : null,
       branchId: cls.branchId,
       teacherId: cls.teacherId,
       totalStudents: cls.sections.reduce((total, section) => total + section.students.length, 0),
@@ -776,7 +796,7 @@ export async function getClassStats(): Promise<ClassResult> {
 }
 
 // Get classes by academic year
-export async function getClassesByAcademicYear(academicYear: string): Promise<ClassResult> {
+export async function getClassesByAcademicYear(academicYearId: string): Promise<ClassResult> {
   try {
     // Get session data for multi-tenancy
     const session = await requireAuth();
@@ -784,7 +804,7 @@ export async function getClassesByAcademicYear(academicYear: string): Promise<Cl
     const classes = await prisma.class.findMany({
       where: {
         aamarId: session.aamarId,
-        academicYear,
+        academicYearId,
       },
       include: {
         branch: true,

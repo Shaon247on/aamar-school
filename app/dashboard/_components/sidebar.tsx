@@ -18,6 +18,7 @@ import {
   MegaphoneIcon,
   BookIcon,
   BuildingIcon,
+  CalendarIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { BranchSelector } from '@/components/branch-selector';
@@ -31,6 +32,7 @@ const navGroups = [
       { name: 'Students', href: '/dashboard/students', icon: UsersIcon },
       { name: 'Parents', href: '/dashboard/parents', icon: Users2Icon },
       { name: 'Teachers', href: '/dashboard/teachers', icon: UsersIcon },
+      { name: 'Academic Year', href: '/dashboard/academic-year', icon: CalendarIcon },
       { name: 'Classes', href: '/dashboard/classes', icon: BookOpenIcon },
       { name: 'Subjects', href: '/dashboard/subjects', icon: BookIcon },
       { name: 'Class Routine', href: '/dashboard/class-routine', icon: CalendarDaysIcon },

@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { getSettings } from "@/app/actions/settings";
 import { getSubjectsForClass, getClasses } from "@/app/actions/classes";
 import { getAllTeachers } from "@/app/actions/teachers";
+import { getAcademicYears } from "@/app/actions/academicYear";
 import { ArrowLeft, Calendar, Pencil, Trash2 } from "lucide-react";
 import {
   Dialog,
@@ -136,7 +137,7 @@ export default function ClassRoutingEditPage() {
   const [classValue, setClassValue] = useState("");
   const [yearValue, setYearValue] = useState("");
   const [classOptions, setClassOptions] = useState<
-    { value: string; label: string; academicYear: string }[]
+    { value: string; label: string; academicYearId: string; academicYearName: string }[]
   >([]);
   const [academicYearOptions, setAcademicYearOptions] = useState<
     { value: string; label: string }[]
@@ -176,13 +177,14 @@ export default function ClassRoutingEditPage() {
   const [classBranchId, setClassBranchId] = useState<string | null>(null);
 
   // Add state for selected class-section
-  const [selectedClassSection, setSelectedClassSection] = useState<{ classId: string, sectionId: string, academicYear: string } | null>(null);
+  const [selectedClassSection, setSelectedClassSection] = useState<{ classId: string, sectionId: string, academicYearId: string; academicYearName: string } | null>(null);
   const [classSectionOptions, setClassSectionOptions] = useState<{
     value: string;
     label: string;
     classId: string;
     sectionId: string;
-    academicYear: string;
+    academicYearId: string;
+    academicYearName: string;
   }[]>([]);
 
   console.log("subjects", subjects);
@@ -195,6 +197,18 @@ export default function ClassRoutingEditPage() {
   useEffect(() => {
     async function loadClassesAndSettings() {
       setLoading(true);
+      
+      // Load academic years first
+      const academicYearsRes = await getAcademicYears();
+      let academicYears: any[] = [];
+      if (academicYearsRes.success && Array.isArray(academicYearsRes.data)) {
+        academicYears = academicYearsRes.data;
+        setAcademicYearOptions(academicYears.map((ay) => ({ 
+          value: ay.id, 
+          label: ay.displayName 
+        })));
+      }
+
       // Load classes with sections
       const classRes = await getClasses();
       let loadedClasses: any[] = [];
@@ -206,12 +220,14 @@ export default function ClassRoutingEditPage() {
         for (const cls of loadedClasses) {
           if (Array.isArray(cls.sections)) {
             for (const section of cls.sections) {
+              const academicYear = academicYears.find(ay => ay.id === cls.academicYearId);
               options.push({
                 value: `${cls.id}|${section.id}`,
                 label: `${cls.name} (${section.name})`,
                 classId: cls.id,
                 sectionId: section.id,
-                academicYear: cls.academicYear,
+                academicYearId: cls.academicYearId,
+                academicYearName: academicYear?.displayName || 'Unknown Year',
               });
             }
           }
@@ -221,16 +237,14 @@ export default function ClassRoutingEditPage() {
           setSelectedClassSection({
             classId: options[0].classId,
             sectionId: options[0].sectionId,
-            academicYear: options[0].academicYear,
+            academicYearId: options[0].academicYearId,
+            academicYearName: options[0].academicYearName,
           });
         }
-        const years = Array.from(new Set(loadedClasses.map((cls) => cls.academicYear)));
-        setAcademicYearOptions(years.map((y) => ({ value: y, label: y })));
       } else {
         setClasses([]);
         setClassSectionOptions([]);
         setSelectedClassSection(null);
-        setAcademicYearOptions([]);
       }
       // Load settings
       const res = await getSettings();
@@ -280,7 +294,7 @@ export default function ClassRoutingEditPage() {
 
   // Filter class options by selected academic year
   const filteredClassOptions = classOptions.filter(
-    (opt) => opt.academicYear === yearValue,
+    (opt) => opt.academicYearId === yearValue,
   );
 
   // When academic year changes, reset classValue to first available class in that year
@@ -412,6 +426,7 @@ export default function ClassRoutingEditPage() {
   // Move fetchAndSetRoutine to component scope
   async function fetchAndSetRoutine(
     classId: string,
+    academicYearId: string,
     subjects: any,
     teachers: any,
   ) {
@@ -419,7 +434,7 @@ export default function ClassRoutingEditPage() {
       setAssignments({});
       return;
     }
-    const res = await getClassRoutine(selectedClassSection.classId, selectedClassSection.sectionId);
+    const res = await getClassRoutine(selectedClassSection.classId, selectedClassSection.sectionId, selectedClassSection.academicYearId);
     console.log("getClassRoutine result for classId", selectedClassSection.classId, res); // <-- log the result
     if (
       res.success &&
@@ -448,7 +463,9 @@ export default function ClassRoutingEditPage() {
 
   // Update useEffect to use the new function
   useEffect(() => {
-    fetchAndSetRoutine(selectedClassSection?.classId || "", subjects, teachers);
+    if (selectedClassSection) {
+      fetchAndSetRoutine(selectedClassSection.classId, selectedClassSection.academicYearId, subjects, teachers);
+    }
     // Only run when classValue, subjects, or teachers change
   }, [selectedClassSection, subjects.length, teachers.length]);
 
@@ -531,7 +548,7 @@ export default function ClassRoutingEditPage() {
     const res = await upsertClassRoutine({
       classId: selectedClassSection.classId,
       sectionId: selectedClassSection.sectionId,
-      academicYear: selectedClassSection.academicYear,
+      academicYearId: selectedClassSection.academicYearId,
       branchId: classBranchId,
       schoolId,
       createdBy,
@@ -545,7 +562,7 @@ export default function ClassRoutingEditPage() {
         variant: "default",
       });
       // Fetch and update the table with the latest routine
-      await fetchAndSetRoutine(selectedClassSection.classId, subjects, teachers);
+      await fetchAndSetRoutine(selectedClassSection.classId, selectedClassSection.academicYearId, subjects, teachers);
     } else {
       toast({
         title: "Failed to save routine",
@@ -593,7 +610,8 @@ export default function ClassRoutingEditPage() {
                     setSelectedClassSection({
                       classId: found.classId,
                       sectionId: found.sectionId,
-                      academicYear: found.academicYear,
+                      academicYearId: found.academicYearId,
+                      academicYearName: found.academicYearName,
                     });
                   }
                 }}
@@ -675,33 +693,27 @@ export default function ClassRoutingEditPage() {
                           return (
                             <td
                               key={day}
-                              className="border relative border-gray-200 p-3 text-center w-32 min-w-[8rem] max-w-[8rem] h-20 min-h-[5rem] align-middle"
+                              className="border relative border-gray-200 p-2 text-center w-32 min-w-[8rem] max-w-[8rem] h-20 min-h-[5rem] align-middle"
                             >
                               {assigned ? (
-                                <>
-                                  {/* Edit button top left */}
-                                  <button
-                                    className="absolute top-1 left-1 p-1 text-blue-600 hover:bg-blue-50 rounded-full z-10"
-                                    type="button"
-                                    onClick={() => {
-                                      setFormClassType(assigned.classType);
-                                      setFormSubject(assigned.subject);
-                                      setFormTeacher(assigned.teacher);
-                                      setFormEndTime(
-                                        (assigned as Assignment).endTime || "",
-                                      );
-                                      setDialogData({ day, time: slot });
-                                      setDialogOpen(true);
-                                    }}
-                                    title="Edit"
-                                  >
-                                    <Pencil size={14} />
-                                  </button>
+                                <div
+                                  className="py-2 cursor-pointer hover:bg-blue-50 rounded transition relative"
+                                  onClick={() => {
+                                    setFormClassType(assigned.classType);
+                                    setFormSubject(assigned.subject);
+                                    setFormTeacher(assigned.teacher);
+                                    setFormEndTime((assigned as Assignment).endTime || "");
+                                    setDialogData({ day, time: slot });
+                                    setDialogOpen(true);
+                                  }}
+                                  title="Edit Slot"
+                                >
                                   {/* Delete button top right */}
                                   <button
                                     className="absolute top-1 right-1 p-1 text-red-600 hover:bg-red-50 rounded-full z-10"
                                     type="button"
-                                    onClick={() => {
+                                    onClick={e => {
+                                      e.stopPropagation();
                                       setAssignments((prev) => {
                                         const newAssignments = { ...prev };
                                         delete newAssignments[key];
@@ -712,36 +724,22 @@ export default function ClassRoutingEditPage() {
                                   >
                                     <Trash2 size={14} />
                                   </button>
-                                  <div className="pt-5">
-                                    {/* Padding top for icons */}
-                                    <div className="font-medium text-sm">
-                                      {subjects.find(
-                                        (s) => s.value === assigned.subject,
-                                      )?.label || assigned.subject}
-                                    </div>
-                                    <div className="text-xs text-gray-600">
-                                      {teachers.find(
-                                        (t) => t.value === assigned.teacher,
-                                      )?.label || assigned.teacher}
-                                    </div>
-                                    <div
-                                      className={[
-                                        "text-[0.60rem] capitalize border rounded-full px-2 inline-block",
-                                        assigned.classType === "regular"
-                                          ? "bg-[#d0eff5]"
-                                          : "",
-                                        assigned.classType === "special"
-                                          ? "bg-[#f0cec5]"
-                                          : "",
-                                        assigned.classType === "break"
-                                          ? "bg-[#f8fac5]"
-                                          : "",
-                                      ].join(" ")}
-                                    >
-                                      {assigned.classType}
-                                    </div>
+                                  <div className="font-medium text-sm">
+                                    {subjects.find((s) => s.value === assigned.subject)?.label || assigned.subject}
                                   </div>
-                                </>
+                                  <div className="text-xs text-gray-600">
+                                    {teachers.find((t) => t.value === assigned.teacher)?.label || assigned.teacher}
+                                  </div>
+                                  <div
+                                    className={[
+                                      "text-[0.60rem] capitalize border rounded-full px-2 inline-block",
+                                      assigned.classType === "regular" ? "bg-[#d0eff5]" : "",
+                                      assigned.classType === "special" ? "bg-[#f0cec5]" : "",
+                                    ].join(" ")}
+                                  >
+                                    {assigned.classType}
+                                  </div>
+                                </div>
                               ) : (
                                 <button
                                   className="flex items-center justify-center w-full h-full text-gray-400 hover:text-blue-600"

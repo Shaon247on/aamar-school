@@ -104,6 +104,7 @@ model User {
   announcements Announcement[]
   activityLogs  ActivityLog[]
   transactions  Transaction[]
+  academicYear  AcademicYear[]
 }
 
 model Profile {
@@ -169,21 +170,26 @@ model Branch {
 }
 
 model Class {
-  id           String      @id @default(cuid())
-  aamarId      String
-  name         String
-  branchId     String
-  branch       Branch      @relation(fields: [branchId], references: [id])
-  academicYear String
-  teacherId    String?
-  teacher      Teacher?    @relation(fields: [teacherId], references: [id])
-  subjects     Subject[]
-  timetables   Timetable[]
-  sections     Section[]
-  students     Student[]
-  exams        Exam[]
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  id      String @id @default(cuid())
+  aamarId String
+  name    String
+
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id])
+
+  academicYearId String?
+  academicYear   AcademicYear? @relation(fields: [academicYearId], references: [id])
+
+  teacherId String?
+  teacher   Teacher? @relation(fields: [teacherId], references: [id])
+
+  subjects      Subject[]
+  timetables    Timetable[]
+  sections      Section[]
+  students      Student[]
+  exams         Exam[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
   classRoutines ClassRoutine[]
 }
 
@@ -251,22 +257,22 @@ model Lesson {
 }
 
 model Teacher {
-  id               String       @id @default(cuid())
+  id               String        @id @default(cuid())
   aamarId          String
-  userId           String       @unique
-  user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId           String        @unique
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   qualification    String
   experience       Int
   specialization   String?
-  joiningDate      DateTime     @default(now())
+  joiningDate      DateTime      @default(now())
   salary           Float?
   emergencyContact String?
   subjects         String[]
   classes          Class[]
   attendance       Attendance[]
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
-  routineSlots    RoutineSlot[]
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  routineSlots     RoutineSlot[]
 }
 
 model Student {
@@ -295,7 +301,7 @@ model Parent {
   id        String    @id @default(cuid())
   aamarId   String
   userId    String    @unique
-  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   relation  String
   students  Student[]
   createdAt DateTime  @default(now())
@@ -306,7 +312,7 @@ model Staff {
   id          String   @id @default(cuid())
   aamarId     String
   userId      String   @unique
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   designation String
   department  String
   createdAt   DateTime @default(now())
@@ -501,7 +507,7 @@ model ActivityLog {
   id          String     @id @default(cuid())
   aamarId     String
   userId      String
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   branchId    String?
   action      ActionType
   module      String
@@ -509,7 +515,7 @@ model ActivityLog {
   description String?
   ipAddress   String?
   userAgent   String?
-  timestamp   DateTime    @default(now())
+  timestamp   DateTime   @default(now())
 }
 
 enum ActionType {
@@ -557,15 +563,17 @@ model Transaction {
 }
 
 model Settings {
-  id            String   @id @default(cuid())
-  aamarId       String
-  schoolId      String   @unique
-  school        School   @relation(fields: [schoolId], references: [id])
-  weeklySchedule Json?   // Stores the weekly schedule as JSON
-  subjectDuration Int?   // Global subject duration in minutes
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String   @id @default(cuid())
+  aamarId         String
+  schoolId        String   @unique
+  school          School   @relation(fields: [schoolId], references: [id])
+  weeklySchedule  Json? // Stores the weekly schedule as JSON
+  subjectDuration Int? // Global subject duration in minutes
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
+
+// Below models Created my Shaon
 
 enum ClassType {
   REGULAR
@@ -577,24 +585,25 @@ enum ClassType {
 }
 
 model ClassRoutine {
-  id            String        @id @default(uuid())
-  aamarId       String
-  classId       String
-  sectionId     String
-  academicYear  String
-  branchId      String
-  schoolId      String
-  createdBy     String
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id             String   @id @default(uuid())
+  aamarId        String
+  classId        String
+  sectionId      String
+  academicYearId String
+  branchId       String
+  schoolId       String
+  createdBy      String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  class         Class         @relation(fields: [classId], references: [id])
-  section       Section       @relation("SectionToClassRoutine", fields: [sectionId], references: [id])
-  slots         RoutineSlot[]
+  class        Class         @relation(fields: [classId], references: [id])
+  section      Section       @relation("SectionToClassRoutine", fields: [sectionId], references: [id])
+  academicYear AcademicYear  @relation(fields: [academicYearId], references: [id])
+  slots        RoutineSlot[]
 }
 
 model RoutineSlot {
-  id             String        @id @default(uuid())
+  id             String    @id @default(uuid())
   aamarId        String
   classRoutineId String
   day            String
@@ -604,7 +613,23 @@ model RoutineSlot {
   teacherId      String?
   classType      ClassType
 
-  classRoutine   ClassRoutine  @relation(fields: [classRoutineId], references: [id])
-  subject        Subject?      @relation(fields: [subjectId], references: [id])
-  teacher        Teacher?      @relation(fields: [teacherId], references: [id])
+  classRoutine ClassRoutine @relation(fields: [classRoutineId], references: [id])
+  subject      Subject?     @relation(fields: [subjectId], references: [id])
+  teacher      Teacher?     @relation(fields: [teacherId], references: [id])
+}
+
+model AcademicYear {
+  id           String  @id @default(uuid())
+  aamarId      String
+  startingYear Int
+  displayName  String // "2024-2025"
+  status       Boolean
+  userId       String
+  user         User    @relation(fields: [userId], references: [id])
+  terms        Json
+
+  class         Class[]
+  classRoutines ClassRoutine[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }

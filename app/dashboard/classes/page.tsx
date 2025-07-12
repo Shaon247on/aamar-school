@@ -1055,7 +1055,7 @@ export default function ClassesPage() {
                         <div>
                           <h3 className="text-lg font-semibold">{cls.name}</h3>
                           <p className="text-sm text-muted-foreground">
-                            Academic Year: {cls.academicYear}
+                            Academic Year: {cls.academicYear.displayName}
                           </p>
                         </div>
                       </div>

@@ -14,7 +14,11 @@ export interface TimetableData {
   class?: {
     id: string;
     name: string;
-    academicYear: string;
+    academicYearId: string;
+    academicYear?: {
+      id: string;
+      displayName: string;
+    };
     branch: {
       name: string;
     };
@@ -58,7 +62,8 @@ export async function getTimetables(classId?: string): Promise<{
       include: {
         class: {
           include: {
-            branch: true
+            branch: true,
+            academicYear: true
           }
         },
         subject: true
@@ -100,7 +105,8 @@ export async function getTimetableById(id: string): Promise<{
       include: {
         class: {
           include: {
-            branch: true
+            branch: true,
+            academicYear: true
           }
         },
         subject: true
