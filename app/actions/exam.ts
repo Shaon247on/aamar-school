@@ -2,33 +2,43 @@
 
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/session';
-import { ExamType } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 
+// Function to calculate exam status based on dates
+function calculateExamStatus(startDate: Date, endDate: Date): 'SCHEDULED' | 'ONGOING' | 'COMPLETED' {
+  const now = new Date();
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  
+  if (now < start) {
+    return 'SCHEDULED';
+  } else if (now >= start && now <= end) {
+    return 'ONGOING';
+  } else {
+    return 'COMPLETED';
+  }
+}
+
+export interface ExamSubjectData {
+  subjectId: string;
+  examDate: string;
+  startTime: string;
+  endTime: string;
+}
+
 export interface ExamFormData {
-  name: string;
-  examType: ExamType;
-  description?: string;
-  startDate: string;
-  endDate: string;
+  term: string;
   classId: string;
   academicYearId: string;
-  subjects: {
-    subjectId: string;
-    fullMarks: number;
-    passMarks: number;
-    examDate: string;
-    duration: number;
-  }[];
+  subjects: ExamSubjectData[];
 }
 
 export interface ExamData {
   id: string;
-  name: string;
-  examType: ExamType;
-  description?: string;
+  term: string;
   startDate: Date;
   endDate: Date;
+  status: 'SCHEDULED' | 'ONGOING' | 'COMPLETED';
   classId: string;
   academicYearId: string;
   schoolId: string;
@@ -43,10 +53,9 @@ export interface ExamData {
   subjects: {
     id: string;
     subjectId: string;
-    fullMarks: number;
-    passMarks: number;
     examDate: Date;
-    duration: number;
+    startTime: string;
+    endTime: string;
     subject: {
       id: string;
       name: string;
@@ -56,7 +65,7 @@ export interface ExamData {
   results: {
     id: string;
     studentId: string;
-    subjectId: string;
+    subjectName: string;
     obtainedMarks: number;
     fullMarks: number;
     grade: string;
@@ -83,23 +92,11 @@ export async function createExam(formData: ExamFormData): Promise<ExamResult> {
     const session = await requireAuth();
     
     // Validate required fields
-    if (!formData.name || !formData.examType || !formData.classId || !formData.academicYearId) {
+    if (!formData.term || !formData.classId || !formData.academicYearId || !formData.subjects.length) {
       return {
         success: false,
         error: 'Required fields are missing',
-        message: 'Please fill in all required fields'
-      };
-    }
-
-    // Validate dates
-    const startDate = new Date(formData.startDate);
-    const endDate = new Date(formData.endDate);
-    
-    if (startDate >= endDate) {
-      return {
-        success: false,
-        error: 'Invalid date range',
-        message: 'End date must be after start date'
+        message: 'Please fill in all required fields and add at least one subject'
       };
     }
 
@@ -142,13 +139,16 @@ export async function createExam(formData: ExamFormData): Promise<ExamResult> {
       };
     }
 
+    // Calculate start and end dates from exam subjects
+    const examDates = formData.subjects.map(s => new Date(s.examDate));
+    const startDate = new Date(Math.min(...examDates.map(d => d.getTime())));
+    const endDate = new Date(Math.max(...examDates.map(d => d.getTime())));
+
     // Create exam with subjects
     const exam = await prisma.exam.create({
       data: {
         aamarId: session.aamarId,
-        name: formData.name,
-        examType: formData.examType,
-        description: formData.description,
+        term: formData.term,
         startDate,
         endDate,
         classId: formData.classId,
@@ -158,10 +158,9 @@ export async function createExam(formData: ExamFormData): Promise<ExamResult> {
           create: formData.subjects.map(subject => ({
             aamarId: session.aamarId,
             subjectId: subject.subjectId,
-            fullMarks: subject.fullMarks,
-            passMarks: subject.passMarks,
             examDate: new Date(subject.examDate),
-            duration: subject.duration,
+            startTime: subject.startTime,
+            endTime: subject.endTime,
           }))
         }
       },
@@ -193,7 +192,7 @@ export async function createExam(formData: ExamFormData): Promise<ExamResult> {
           select: {
             id: true,
             studentId: true,
-            subjectId: true,
+            subjectName: true,
             obtainedMarks: true,
             fullMarks: true,
             grade: true,
@@ -212,7 +211,10 @@ export async function createExam(formData: ExamFormData): Promise<ExamResult> {
     revalidatePath('/dashboard/exams');
     return {
       success: true,
-      data: exam as ExamData,
+      data: {
+        ...exam,
+        status: calculateExamStatus(exam.startDate, exam.endDate)
+      } as ExamData,
       message: 'Exam created successfully'
     };
   } catch (error) {
@@ -262,7 +264,7 @@ export async function getExams(): Promise<ExamResult> {
           select: {
             id: true,
             studentId: true,
-            subjectId: true,
+            subjectName: true,
             obtainedMarks: true,
             fullMarks: true,
             grade: true,
@@ -278,13 +280,16 @@ export async function getExams(): Promise<ExamResult> {
       },
       orderBy: [
         { startDate: 'desc' },
-        { name: 'asc' }
+        { term: 'asc' }
       ]
     });
 
     return {
       success: true,
-      data: exams as ExamData[],
+      data: exams.map(exam => ({
+        ...exam,
+        status: calculateExamStatus(exam.startDate, exam.endDate)
+      })) as ExamData[],
       message: 'Exams retrieved successfully'
     };
   } catch (error) {
@@ -344,13 +349,6 @@ export async function getExamById(id: string): Promise<ExamResult> {
                   }
                 }
               }
-            },
-            subject: {
-              select: {
-                id: true,
-                name: true,
-                code: true,
-              }
             }
           }
         },
@@ -373,7 +371,10 @@ export async function getExamById(id: string): Promise<ExamResult> {
 
     return {
       success: true,
-      data: exam as ExamData,
+      data: {
+        ...exam,
+        status: calculateExamStatus(exam.startDate, exam.endDate)
+      } as ExamData,
       message: 'Exam retrieved successfully'
     };
   } catch (error) {
@@ -407,29 +408,20 @@ export async function updateExam(id: string, formData: Partial<ExamFormData>): P
       };
     }
 
-    // Validate dates if provided
-    if (formData.startDate && formData.endDate) {
-      const startDate = new Date(formData.startDate);
-      const endDate = new Date(formData.endDate);
-      
-      if (startDate >= endDate) {
-        return {
-          success: false,
-          error: 'Invalid date range',
-          message: 'End date must be after start date'
-        };
-      }
-    }
-
     // Prepare update data
     const updateData: any = {};
-    if (formData.name) updateData.name = formData.name;
-    if (formData.examType) updateData.examType = formData.examType;
-    if (formData.description !== undefined) updateData.description = formData.description;
-    if (formData.startDate) updateData.startDate = new Date(formData.startDate);
-    if (formData.endDate) updateData.endDate = new Date(formData.endDate);
+    if (formData.term) updateData.term = formData.term;
     if (formData.classId) updateData.classId = formData.classId;
     if (formData.academicYearId) updateData.academicYearId = formData.academicYearId;
+
+    // If subjects are provided, recalculate start and end dates
+    if (formData.subjects && formData.subjects.length > 0) {
+      const examDates = formData.subjects.map(s => new Date(s.examDate));
+      const startDate = new Date(Math.min(...examDates.map(d => d.getTime())));
+      const endDate = new Date(Math.max(...examDates.map(d => d.getTime())));
+      updateData.startDate = startDate;
+      updateData.endDate = endDate;
+    }
 
     // Update exam
     const updatedExam = await prisma.exam.update({
@@ -465,7 +457,7 @@ export async function updateExam(id: string, formData: Partial<ExamFormData>): P
           select: {
             id: true,
             studentId: true,
-            subjectId: true,
+            subjectName: true,
             obtainedMarks: true,
             fullMarks: true,
             grade: true,
@@ -484,7 +476,10 @@ export async function updateExam(id: string, formData: Partial<ExamFormData>): P
     revalidatePath('/dashboard/exams');
     return {
       success: true,
-      data: updatedExam as ExamData,
+      data: {
+        ...updatedExam,
+        status: calculateExamStatus(updatedExam.startDate, updatedExam.endDate)
+      } as ExamData,
       message: 'Exam updated successfully'
     };
   } catch (error) {
@@ -518,28 +513,11 @@ export async function deleteExam(id: string): Promise<ExamResult> {
       };
     }
 
-    // Delete related records first to avoid foreign key constraint violations
-    await prisma.$transaction(async (tx) => {
-      // Delete exam results first
-      await tx.examResult.deleteMany({
-        where: {
-          examId: id,
-        }
-      });
-
-      // Delete exam subjects
-      await tx.examSubject.deleteMany({
-        where: {
-          examId: id,
-        }
-      });
-
-      // Finally delete the exam
-      await tx.exam.delete({
-        where: {
-          id,
-        }
-      });
+    // Delete exam (cascade will handle related records)
+    await prisma.exam.delete({
+      where: {
+        id,
+      }
     });
 
     revalidatePath('/dashboard/exams');
@@ -595,7 +573,7 @@ export async function getExamsByAcademicYear(academicYearId: string): Promise<Ex
           select: {
             id: true,
             studentId: true,
-            subjectId: true,
+            subjectName: true,
             obtainedMarks: true,
             fullMarks: true,
             grade: true,
@@ -611,13 +589,16 @@ export async function getExamsByAcademicYear(academicYearId: string): Promise<Ex
       },
       orderBy: [
         { startDate: 'desc' },
-        { name: 'asc' }
+        { term: 'asc' }
       ]
     });
 
     return {
       success: true,
-      data: exams as ExamData[],
+      data: exams.map(exam => ({
+        ...exam,
+        status: calculateExamStatus(exam.startDate, exam.endDate)
+      })) as ExamData[],
       message: 'Exams retrieved successfully'
     };
   } catch (error) {
@@ -668,7 +649,7 @@ export async function getExamsByClass(classId: string): Promise<ExamResult> {
           select: {
             id: true,
             studentId: true,
-            subjectId: true,
+            subjectName: true,
             obtainedMarks: true,
             fullMarks: true,
             grade: true,
@@ -684,13 +665,16 @@ export async function getExamsByClass(classId: string): Promise<ExamResult> {
       },
       orderBy: [
         { startDate: 'desc' },
-        { name: 'asc' }
+        { term: 'asc' }
       ]
     });
 
     return {
       success: true,
-      data: exams as ExamData[],
+      data: exams.map(exam => ({
+        ...exam,
+        status: calculateExamStatus(exam.startDate, exam.endDate)
+      })) as ExamData[],
       message: 'Exams retrieved successfully'
     };
   } catch (error) {
@@ -699,6 +683,84 @@ export async function getExamsByClass(classId: string): Promise<ExamResult> {
       success: false,
       error: 'Failed to fetch exams',
       message: 'An error occurred while fetching the exams'
+    };
+  }
+}
+
+// Get terms from academic year
+export async function getTermsFromAcademicYear(academicYearId: string): Promise<{ success: boolean; data?: string[]; error?: string }> {
+  try {
+    const session = await requireAuth();
+    
+    const academicYear = await prisma.academicYear.findFirst({
+      where: {
+        id: academicYearId,
+        aamarId: session.aamarId,
+      },
+      select: {
+        terms: true,
+      }
+    });
+
+    if (!academicYear) {
+      return {
+        success: false,
+        error: 'Academic year not found'
+      };
+    }
+
+    // Handle both old object format and new array format
+    let terms: string[] = [];
+    if (Array.isArray(academicYear.terms)) {
+      // New format: array of objects
+      terms = academicYear.terms.map((term: any) => term.name);
+    } else if (academicYear.terms && typeof academicYear.terms === 'object') {
+      // Old format: object with keys
+      terms = Object.keys(academicYear.terms as Record<string, any>);
+    }
+
+    return {
+      success: true,
+      data: terms
+    };
+  } catch (error) {
+    console.error('Error fetching terms:', error);
+    return {
+      success: false,
+      error: 'Failed to fetch terms'
+    };
+  }
+}
+
+// Get subjects by class
+export async function getSubjectsByClass(classId: string): Promise<{ success: boolean; data?: any[]; error?: string }> {
+  try {
+    const session = await requireAuth();
+    
+    const subjects = await prisma.subject.findMany({
+      where: {
+        classId,
+        aamarId: session.aamarId,
+      },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+      },
+      orderBy: {
+        name: 'asc'
+      }
+    });
+
+    return {
+      success: true,
+      data: subjects
+    };
+  } catch (error) {
+    console.error('Error fetching subjects:', error);
+    return {
+      success: false,
+      error: 'Failed to fetch subjects'
     };
   }
 } 

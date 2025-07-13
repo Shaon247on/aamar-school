@@ -291,7 +291,19 @@ export default function AcademicYearPage() {
         return;
       }
 
-      const result = await createAcademicYear(addForm);
+      // Remove id fields from terms before saving
+      const termsWithoutId = addForm.terms.map((term: any) => ({
+        name: term.name,
+        startDate: term.startDate,
+        endDate: term.endDate
+      }));
+
+      const formDataToSave = {
+        ...addForm,
+        terms: termsWithoutId
+      };
+
+      const result = await createAcademicYear(formDataToSave);
       if (result.success) {
         toast({
           title: "Success",
@@ -331,7 +343,19 @@ export default function AcademicYearPage() {
         return;
       }
 
-      const result = await updateAcademicYear(editForm.id, editForm);
+      // Remove id fields from terms before saving
+      const termsWithoutId = editForm.terms.map((term: any) => ({
+        name: term.name,
+        startDate: term.startDate,
+        endDate: term.endDate
+      }));
+
+      const formDataToSave = {
+        ...editForm,
+        terms: termsWithoutId
+      };
+
+      const result = await updateAcademicYear(editForm.id, formDataToSave);
       if (result.success) {
         toast({
           title: "Success",

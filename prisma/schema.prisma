@@ -45,14 +45,10 @@ enum LessonType {
   LAB
 }
 
-enum ExamType {
-  MIDTERM
-  FINAL
-  UNIT_TEST
-  MONTHLY
-  WEEKLY
-  ASSIGNMENT
-  PROJECT
+enum ExamStatus {
+  SCHEDULED
+  ONGOING
+  COMPLETED
 }
 
 enum FeeType {
@@ -223,7 +219,6 @@ model Subject {
   chapters     Chapter[]
   timetables   Timetable[]
   examSubjects ExamSubject[]
-  examResults  ExamResult[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   routineSlots RoutineSlot[]
@@ -338,11 +333,10 @@ model Attendance {
 model Exam {
   id             String        @id @default(cuid())
   aamarId        String
-  name           String
-  examType       ExamType
-  description    String?
-  startDate      DateTime
-  endDate        DateTime
+  term           String        // Term name from academic year (e.g., "Term 1", "Term 2")
+  startDate      DateTime      // Auto-calculated from earliest exam subject date
+  endDate        DateTime      // Auto-calculated from latest exam subject date
+  status         ExamStatus    @default(SCHEDULED)
   classId        String
   class          Class         @relation(fields: [classId], references: [id])
   academicYearId String
@@ -362,10 +356,9 @@ model ExamSubject {
   exam      Exam     @relation(fields: [examId], references: [id])
   subjectId String
   subject   Subject  @relation(fields: [subjectId], references: [id])
-  fullMarks Float
-  passMarks Float
   examDate  DateTime
-  duration  Int // minutes
+  startTime String   // Format: "09:00"
+  endTime   String   // Format: "11:00"
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -379,8 +372,7 @@ model ExamResult {
   exam          Exam     @relation(fields: [examId], references: [id])
   studentId     String
   student       Student  @relation(fields: [studentId], references: [id])
-  subjectId     String
-  subject       Subject  @relation(fields: [subjectId], references: [id])
+  subjectName   String   // Subject name from the exam subject
   obtainedMarks Float
   fullMarks     Float
   grade         String
@@ -389,7 +381,7 @@ model ExamResult {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  @@unique([examId, studentId, subjectId])
+  @@unique([examId, studentId, subjectName])
 }
 
 model Fee {

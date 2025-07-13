@@ -8,7 +8,6 @@ const {
   AudienceType,
   AnnouncementType,
   ActionType,
-  ExamType,
   FeeType,
   AccountType,
   TransactionType,
@@ -163,23 +162,23 @@ async function main() {
         startingYear: yearData.startingYear,
         displayName: yearData.displayName,
         status: isCurrentYear,
-        terms: {
-          "Term 1": {
+        terms: [
+          {
             name: "Term 1",
             startDate: `${yearData.startingYear}-01-01`,
             endDate: `${yearData.startingYear}-04-30`,
           },
-          "Term 2": {
+          {
             name: "Term 2", 
             startDate: `${yearData.startingYear}-05-01`,
             endDate: `${yearData.startingYear}-08-31`,
           },
-          "Term 3": {
+          {
             name: "Term 3",
             startDate: `${yearData.startingYear}-09-01`,
             endDate: `${yearData.startingYear}-12-31`,
           },
-        },
+        ],
         userId: adminUser.id,
       },
     });
@@ -534,57 +533,47 @@ async function main() {
   });
 
   // Create Sample Exams
-  const examData = [
-    {
-      name: "Mid Term Examination",
-      examType: "MIDTERM",
-      description: "Mid-term examination for all classes",
-      startDate: new Date("2024-03-15"),
-      endDate: new Date("2024-03-20"),
-    },
-    {
-      name: "Final Examination",
-      examType: "FINAL",
-      description: "Final examination for all classes",
-      startDate: new Date("2024-06-15"),
-      endDate: new Date("2024-06-25"),
-    },
-    {
-      name: "Unit Test 1",
-      examType: "UNIT_TEST",
-      description: "First unit test of the semester",
-      startDate: new Date("2024-02-01"),
-      endDate: new Date("2024-02-05"),
-    },
-  ];
-
+  const examTerms = ["Term 1", "Term 2", "Term 3"];
   const exams = [];
-  for (const examInfo of examData) {
+
+  for (const term of examTerms) {
     // Create exam for each class
     for (const cls of classes) {
+      // Get subjects for this class
+      const classSubjects = subjects.filter(subject => subject.classId === cls.id).slice(0, 3);
+      
+      if (classSubjects.length === 0) continue; // Skip if no subjects
+      
+      // Create exam subjects with dates and times
+      const examSubjects = classSubjects.map((subject, index) => {
+        const examDate = new Date("2024-03-15");
+        examDate.setDate(examDate.getDate() + index); // Spread exams across days
+        
+        return {
+          aamarId: ORGANIZATION_AAMAR_ID,
+          subjectId: subject.id,
+          examDate: examDate,
+          startTime: "09:00",
+          endTime: "11:00",
+        };
+      });
+
+      // Calculate start and end dates from exam subjects
+      const examDates = examSubjects.map(es => es.examDate);
+      const startDate = new Date(Math.min(...examDates.map(d => d.getTime())));
+      const endDate = new Date(Math.max(...examDates.map(d => d.getTime())));
+
       const exam = await prisma.exam.create({
         data: {
           aamarId: ORGANIZATION_AAMAR_ID,
-          name: `${examInfo.name} - ${cls.name}`,
-          examType: examInfo.examType,
-          description: examInfo.description,
-          startDate: examInfo.startDate,
-          endDate: examInfo.endDate,
+          term: term,
+          startDate: startDate,
+          endDate: endDate,
           classId: cls.id,
           academicYearId: currentAcademicYear.id,
           schoolId: school.id,
           subjects: {
-            create: subjects
-              .filter(subject => subject.classId === cls.id)
-              .slice(0, 3) // Limit to 3 subjects per exam
-              .map(subject => ({
-                aamarId: ORGANIZATION_AAMAR_ID,
-                subjectId: subject.id,
-                fullMarks: 100,
-                passMarks: 40,
-                examDate: new Date(examInfo.startDate.getTime() + Math.random() * (examInfo.endDate.getTime() - examInfo.startDate.getTime())),
-                duration: 120, // 2 hours
-              }))
+            create: examSubjects
           }
         }
       });
