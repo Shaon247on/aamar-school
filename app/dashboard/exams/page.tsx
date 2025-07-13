@@ -881,7 +881,7 @@ export default function ExamsPage() {
 
       {/* Routine Dialog */}
       <Dialog open={showRoutineDialog} onOpenChange={setShowRoutineDialog}>
-        <DialogContent className="max-w-4xl max-h-[95%] overflow-scroll">
+        <DialogContent className="max-w-4xl max-h-[95%] overflow-scroll print-dialog">
           <DialogHeader>
             <DialogTitle className="no-print">Exam Routine - {printRoutineData.term}</DialogTitle>
           </DialogHeader>
