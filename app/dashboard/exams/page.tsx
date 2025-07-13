@@ -51,9 +51,9 @@ export default function ExamsPage() {
       getClasses(),
       getAcademicYears(),
     ]);
-    setExams(examsRes.data || []);
-    setClasses(classesRes.data || []);
-    setAcademicYears(yearsRes.data || []);
+    setExams(Array.isArray(examsRes.data) ? examsRes.data : []);
+    setClasses(Array.isArray(classesRes.data) ? classesRes.data : []);
+    setAcademicYears(Array.isArray(yearsRes.data) ? yearsRes.data : []);
     setLoading(false);
   }
 
