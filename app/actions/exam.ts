@@ -513,12 +513,12 @@ export async function deleteExam(id: string): Promise<ExamResult> {
       };
     }
 
-    // Delete exam (cascade will handle related records)
-    await prisma.exam.delete({
-      where: {
-        id,
-      }
-    });
+    // Delete all related ExamSubject and ExamResult records first, then the exam
+    await prisma.$transaction([
+      prisma.examSubject.deleteMany({ where: { examId: id } }),
+      prisma.examResult.deleteMany({ where: { examId: id } }),
+      prisma.exam.delete({ where: { id } }),
+    ]);
 
     revalidatePath('/dashboard/exams');
     return {

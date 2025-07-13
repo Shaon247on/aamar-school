@@ -20,6 +20,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import React from "react";
+import { getSchool } from "@/app/actions/school";
 
 // Function to calculate exam status based on dates
 function calculateExamStatus(startDate: Date | string, endDate: Date | string): 'SCHEDULED' | 'ONGOING' | 'COMPLETED' {
@@ -86,6 +87,19 @@ export default function ExamsPage() {
   const [selectedTerm, setSelectedTerm] = useState<string>("");
   const { toast } = useToast();
 
+  const [printRoutineData, setPrintRoutineData] = useState({
+    schoolName: "",
+    schoolAddress: "",
+    academicYear: "",
+    term: "",
+    rows: [], // dates
+    columns: [], // time slots
+    cellMap: {}, // { [date]: { [timeKey]: [subjectClassStr, ...] } }
+  });
+
+  // Add state for school info
+  const [schoolInfo, setSchoolInfo] = useState<any>(null);
+
   useEffect(() => {
     loadData();
   }, []);
@@ -98,6 +112,29 @@ export default function ExamsPage() {
 
     return () => clearInterval(interval);
   }, []);
+
+  // Fetch school info on mount
+  useEffect(() => {
+    async function fetchSchool() {
+      // Try to get schoolId from session (if available)
+      let schoolId = null;
+      try {
+        const res = await fetch("/api/auth/session");
+        const session = await res.json();
+        schoolId = session?.user?.schoolId;
+      } catch {}
+      // Fallback: use first exam's schoolId if available
+      if (!schoolId && exams.length > 0) {
+        schoolId = exams[0]?.schoolId;
+      }
+      if (schoolId) {
+        const schoolRes = await getSchool(schoolId);
+        if (schoolRes.success) setSchoolInfo(schoolRes.data);
+      }
+    }
+    fetchSchool();
+    // eslint-disable-next-line
+  }, [exams]);
 
   async function loadData() {
     setLoading(true);
@@ -394,6 +431,73 @@ export default function ExamsPage() {
     { title: "Completed", value: exams.filter(e => e.status === 'COMPLETED').length, icon: CheckCircleIcon, color: "purple" },
   ];
 
+  // Helper to format time range
+  function formatTimeRange(start, end) {
+    const to12 = (t) => {
+      const [h, m] = t.split(":");
+      const hour = parseInt(h, 10);
+      const min = m.padStart(2, "0");
+      const ampm = hour >= 12 ? "PM" : "AM";
+      const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+      return `${hour12}:${min} ${ampm}`;
+    };
+    return `${to12(start)} – ${to12(end)}`;
+  }
+
+  async function handleOpenPrintRoutine(term) {
+    setSelectedTerm(term);
+    // Filter exams for selected academic year and term
+    const examsRes = await getExams();
+    const filtered = Array.isArray(examsRes.data)
+      ? examsRes.data.filter(e => e.term === term && e.academicYearId === selectedAcademicYear)
+      : [];
+    // Gather all ExamSubjects
+    let allSubjects = [];
+    filtered.forEach(exam => {
+      if (Array.isArray(exam.subjects)) {
+        exam.subjects.forEach(subj => {
+          allSubjects.push({
+            ...subj,
+            className: exam.class?.name || "",
+          });
+        });
+      }
+    });
+    // Unique sorted dates
+    const dateSet = new Set(allSubjects.map(s => s.examDate && new Date(s.examDate).toISOString().slice(0,10)));
+    const rows = Array.from(dateSet).sort();
+    // Unique sorted time slots
+    const timeSet = new Set(allSubjects.map(s => `${s.startTime}-${s.endTime}`));
+    const columns = Array.from(timeSet).sort();
+    // Build cell map
+    const cellMap = {};
+    rows.forEach(date => {
+      cellMap[date] = {};
+      columns.forEach(timeKey => {
+        cellMap[date][timeKey] = allSubjects
+          .filter(s => (s.examDate && new Date(s.examDate).toISOString().slice(0,10) === date) && `${s.startTime}-${s.endTime}` === timeKey)
+          .map(s => `${s.subject?.name || ""} - ${s.className}`);
+      });
+    });
+    // School info from first exam
+    let schoolName = "", schoolAddress = "", academicYear = "";
+    if (filtered[0]) {
+      schoolName = filtered[0].class?.branch?.school?.name || "";
+      schoolAddress = filtered[0].class?.branch?.school?.address || "";
+      academicYear = filtered[0].academicYear?.displayName || "";
+    }
+    setPrintRoutineData({
+      schoolName,
+      schoolAddress,
+      academicYear,
+      term,
+      rows,
+      columns,
+      cellMap
+    });
+    setShowRoutineDialog(true);
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -492,8 +596,7 @@ export default function ExamsPage() {
                     size="sm"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setSelectedTerm(term);
-                      setShowRoutineDialog(true);
+                      handleOpenPrintRoutine(term);
                     }}
                   >
                     <PrinterIcon className="h-4 w-4 mr-2" />
@@ -778,26 +881,61 @@ export default function ExamsPage() {
 
       {/* Routine Dialog */}
       <Dialog open={showRoutineDialog} onOpenChange={setShowRoutineDialog}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-4xl max-h-[95%] overflow-scroll">
           <DialogHeader>
-            <DialogTitle>Exam Routine - {selectedTerm}</DialogTitle>
+            <DialogTitle className="no-print">Exam Routine - {printRoutineData.term}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="text-center py-8">
-              <FileTextIcon className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Routine Displayer</h3>
-              <p className="text-gray-500 mb-6">
-                This is where the exam routine will be displayed with printing option in the future.
-              </p>
-              <div className="flex justify-center space-x-4">
-                <Button variant="outline">
-                  <FileTextIcon className="h-4 w-4 mr-2" />
-                  Print Option
-                </Button>
-                <Button variant="outline" onClick={() => setShowRoutineDialog(false)}>
-                  Close
-                </Button>
-              </div>
+            <div className="text-center">
+              {schoolInfo && (
+                <>
+                  {/* {schoolInfo.logo && (
+                    <img src={schoolInfo.logo} alt="School Logo" className="mx-auto mb-2 h-16" />
+                  )} */}
+                  <div className="font-bold text-lg">{schoolInfo.name}</div>
+                  <div className="text-sm">{schoolInfo.address}</div>
+                  <div className="text-sm">{schoolInfo.phone} | {schoolInfo.email}</div>
+                  {/* {schoolInfo.website && (
+                    <div className="text-sm"><a href={schoolInfo.website} target="_blank" rel="noopener noreferrer" className="underline text-blue-600">{schoolInfo.website}</a></div>
+                  )} */}
+                </>
+              )}
+              <div className="text-sm mt-1">Academic Year: {printRoutineData.academicYear} | Term: {printRoutineData.term}</div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full border text-center">
+                <thead>
+                  <tr>
+                    <th className="border px-2 py-1 text-sm font-medium">Date</th>
+                    {printRoutineData.columns.map(timeKey => (
+                      <th key={timeKey} className="border px-2 py-1 text-sm font-medium">{formatTimeRange(...timeKey.split("-"))}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {printRoutineData.rows.map(date => (
+                    <tr key={date}>
+                      <td className="border px-1 py-1 text-sm">{date}</td>
+                      {printRoutineData.columns.map(timeKey => (
+                        <td key={timeKey} className="border px-2 py-1 text-xs">
+                          {printRoutineData.cellMap[date][timeKey].map((str, i) => (
+                            <div key={i}>{str}</div>
+                          ))}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex justify-center space-x-4 mt-4 no-print">
+              <Button variant="outline" onClick={() => window.print()}>
+                <PrinterIcon className="h-4 w-4 mr-2" />
+                Print
+              </Button>
+              <Button variant="outline" onClick={() => setShowRoutineDialog(false)}>
+                Close
+              </Button>
             </div>
           </div>
         </DialogContent>

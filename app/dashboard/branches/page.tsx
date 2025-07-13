@@ -338,16 +338,16 @@ export default function BranchesPage() {
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
                 <p className="text-xs text-muted-foreground">Total Students</p>
                 <p className="text-xl font-bold">{stats.totalStudents.toLocaleString()}</p>
               </div>
               <div className="p-2 rounded-lg bg-purple-100">
                 <UsersIcon className="h-4 w-4 text-purple-600" />
               </div>
-            </div>
+                </div>
           </CardContent>
         </Card>
         <Card>
@@ -359,10 +359,10 @@ export default function BranchesPage() {
               </div>
               <div className="p-2 rounded-lg bg-orange-100">
                 <BookOpenIcon className="h-4 w-4 text-orange-600" />
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
       </div>
 
       {/* Filters */}
@@ -412,20 +412,20 @@ export default function BranchesPage() {
                   <span className="ml-2">Loading branches...</span>
                 </div>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Branch</TableHead>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Branch</TableHead>
                       <TableHead>Branch Code</TableHead>
-                      <TableHead>Contact</TableHead>
-                      <TableHead>Students</TableHead>
-                      <TableHead>Teachers</TableHead>
+                    <TableHead>Contact</TableHead>
+                    <TableHead>Students</TableHead>
+                    <TableHead>Teachers</TableHead>
                       <TableHead>Classes</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                     {filteredBranches.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
@@ -436,35 +436,35 @@ export default function BranchesPage() {
                       </TableRow>
                     ) : (
                       filteredBranches.map((branch) => (
-                        <TableRow key={branch.id}>
-                          <TableCell>
-                            <div className="flex items-center gap-3">
-                              <div className="p-2 bg-blue-100 rounded-lg">
-                                <BuildingIcon className="h-4 w-4 text-blue-600" />
-                              </div>
-                              <div>
-                                <p className="font-medium">{branch.name}</p>
+                    <TableRow key={branch.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-blue-100 rounded-lg">
+                            <BuildingIcon className="h-4 w-4 text-blue-600" />
+                          </div>
+                          <div>
+                            <p className="font-medium">{branch.name}</p>
                                 <p className="text-sm text-muted-foreground">{branch.address}</p>
-                              </div>
-                            </div>
-                          </TableCell>
+                          </div>
+                        </div>
+                      </TableCell>
                           <TableCell className="font-mono text-sm">{branch.code}</TableCell>
-                          <TableCell>
-                            <div className="text-sm">
-                              <p className="flex items-center gap-1">
-                                <PhoneIcon className="h-3 w-3" />
-                                {branch.phone}
-                              </p>
-                              <p className="flex items-center gap-1 text-muted-foreground">
-                                <MailIcon className="h-3 w-3" />
-                                {branch.email}
-                              </p>
-                            </div>
-                          </TableCell>
+                      <TableCell>
+                        <div className="text-sm">
+                          <p className="flex items-center gap-1">
+                            <PhoneIcon className="h-3 w-3" />
+                            {branch.phone}
+                          </p>
+                          <p className="flex items-center gap-1 text-muted-foreground">
+                            <MailIcon className="h-3 w-3" />
+                            {branch.email}
+                          </p>
+                        </div>
+                      </TableCell>
                           <TableCell className="text-center font-semibold">{branch.totalStudents || 0}</TableCell>
                           <TableCell className="text-center font-semibold">{branch.totalTeachers || 0}</TableCell>
                           <TableCell className="text-center font-semibold">{branch.totalClasses || 0}</TableCell>
-                          <TableCell>
+                      <TableCell>
                             <Badge className={getStatusColor(branch.isActive)}>
                               {branch.isActive ? (
                                 <div className="flex items-center gap-1">
@@ -477,24 +477,24 @@ export default function BranchesPage() {
                                   {getStatusText(branch.isActive)}
                                 </div>
                               )}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm">
-                                  <MoreVerticalIcon className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm">
+                              <MoreVerticalIcon className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
                                 <DropdownMenuItem onClick={() => openViewDialog(branch)}>
-                                  <EyeIcon className="h-4 w-4 mr-2" />
-                                  View Details
-                                </DropdownMenuItem>
+                              <EyeIcon className="h-4 w-4 mr-2" />
+                              View Details
+                            </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => openEditDialog(branch)}>
-                                  <EditIcon className="h-4 w-4 mr-2" />
-                                  Edit Branch
-                                </DropdownMenuItem>
+                              <EditIcon className="h-4 w-4 mr-2" />
+                              Edit Branch
+                            </DropdownMenuItem>
                                 <DropdownMenuItem 
                                   onClick={() => handleToggleStatus(branch)}
                                   disabled={submitting}
@@ -503,22 +503,22 @@ export default function BranchesPage() {
                                   {submitting ? (
                                     <Loader2Icon className="h-4 w-4 mr-2 animate-spin" />
                                   ) : (
-                                    <SettingsIcon className="h-4 w-4 mr-2" />
+                              <SettingsIcon className="h-4 w-4 mr-2" />
                                   )}
                                   {branch.isActive ? "Deactivate" : "Activate"}
-                                </DropdownMenuItem>
+                            </DropdownMenuItem>
                                 <DropdownMenuItem className="text-red-600" onClick={() => openDeleteDialog(branch)}>
-                                  <TrashIcon className="h-4 w-4 mr-2" />
+                              <TrashIcon className="h-4 w-4 mr-2" />
                                   Delete Branch
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        </TableRow>
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
                       ))
                     )}
-                  </TableBody>
-                </Table>
+                </TableBody>
+              </Table>
               )}
             </CardContent>
           </Card>
@@ -636,7 +636,7 @@ export default function BranchesPage() {
                     <div key={branch.id} className="flex justify-between">
                       <span>{branch.name}</span>
                       <span className="font-semibold">{branch.totalStudents || 0}</span>
-                    </div>
+                  </div>
                   ))}
                 </div>
               </CardContent>
@@ -685,7 +685,7 @@ export default function BranchesPage() {
                   required
                 />
               </div>
-              <div className="space-y-2">
+                <div className="space-y-2">
                 <Label htmlFor="code">Branch Code</Label>
                 <Input
                   id="code"
@@ -695,8 +695,8 @@ export default function BranchesPage() {
                   required
                 />
               </div>
-            </div>
-            <div className="space-y-2">
+                </div>
+                <div className="space-y-2">
               <Label htmlFor="address">Address</Label>
               <Textarea
                 id="address"
@@ -705,7 +705,7 @@ export default function BranchesPage() {
                 placeholder="Enter complete address"
                 required
               />
-            </div>
+                </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="phone">Phone</Label>
@@ -765,7 +765,7 @@ export default function BranchesPage() {
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
+                <div className="space-y-2">
                 <Label htmlFor="edit-name">Branch Name</Label>
                 <Input
                   id="edit-name"
@@ -774,8 +774,8 @@ export default function BranchesPage() {
                   placeholder="Enter branch name"
                   required
                 />
-              </div>
-              <div className="space-y-2">
+                </div>
+                <div className="space-y-2">
                 <Label htmlFor="edit-code">Branch Code</Label>
                 <Input
                   id="edit-code"
@@ -818,21 +818,21 @@ export default function BranchesPage() {
                   required
                 />
               </div>
-            </div>
-            <div className="space-y-2">
+              </div>
+              <div className="space-y-2">
               <Label htmlFor="edit-status">Status</Label>
               <Select 
                 value={formData.isActive ? "active" : "inactive"} 
                 onValueChange={(value) => setFormData({ ...formData, isActive: value === "active" })}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select status" />
-                </SelectTrigger>
-                <SelectContent>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
                   <SelectItem value="active">Active</SelectItem>
                   <SelectItem value="inactive">Inactive</SelectItem>
-                </SelectContent>
-              </Select>
+                  </SelectContent>
+                </Select>
             </div>
             <div className="flex justify-end gap-2 pt-4 border-t">
               <Button type="button" variant="outline" onClick={() => setShowEditDialog(false)}>
@@ -923,12 +923,12 @@ export default function BranchesPage() {
             </p>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setShowDeleteDialog(false)}>
-                Cancel
-              </Button>
+              Cancel
+            </Button>
               <Button type="button" variant="destructive" onClick={handleDelete} disabled={submitting}>
                 {submitting && <Loader2Icon className="h-4 w-4 mr-2 animate-spin" />}
                 Delete Branch
-              </Button>
+            </Button>
             </div>
           </div>
         </DialogContent>
